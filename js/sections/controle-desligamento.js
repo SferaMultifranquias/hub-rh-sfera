@@ -249,7 +249,10 @@
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div class="sub" style="font-size:12px;color:var(--muted)">${U.fmtInt(noPeriodo.length)} desligamento(s) no período/filtros${semVinculo ? ` · ${U.fmtInt(semVinculo)} sem cadastro correspondente no Headcount` : ''}</div>
-        <button type="button" class="btn btn-sm" style="width:auto" id="cd-novo">+ Lançar desligamento</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-outline btn-sm" style="width:auto" id="cd-exportar" title="Baixa em Excel a lista com os filtros atuais e as respostas das entrevistas dessas fichas">Exportar Excel</button>
+          <button type="button" class="btn btn-sm" style="width:auto" id="cd-novo">+ Lançar desligamento</button>
+        </div>
       </div>
       ${avulsos.length ? `<div class="insight alerta" style="margin-bottom:14px;display:block"><div style="margin-bottom:6px"><strong>${U.fmtInt(avulsos.length)} link(s) de entrevista sem desligamento lançado</strong> — lance o desligamento para que o link passe a ser acompanhado na lista.</div>
         ${avulsos.map((l, i) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;padding:3px 0"><b>${esc(l.colaboradorNome || '—')}</b><span style="color:var(--muted)">${esc(l.cargo || '')} · ${situacaoLink(l)} · gerado em ${U.fmtDateBR(String(l.criadoEm || '').slice(0, 10)) || '—'}</span>${l.status === 'Preenchido' ? `<button type="button" class="btn btn-outline btn-sm" style="width:auto" data-avulso-resp="${i}">Ver respostas</button>` : ''}<button type="button" class="btn btn-outline btn-sm" style="width:auto" data-avulso-copiar="${i}">Copiar link</button></div>`).join('')}</div>` : ''}
@@ -291,6 +294,7 @@
     });
     el.querySelectorAll('[data-fila]').forEach(k => k.addEventListener('click', () => { estado.fila = estado.fila === k.dataset.fila ? 'todas' : k.dataset.fila; estado.pagina = 1; desenhar(el, f); }));
     el.querySelector('#cd-novo').addEventListener('click', () => abrirFormulario(null));
+    el.querySelector('#cd-exportar').addEventListener('click', e => exportarExcel(aplicarFiltros(noPeriodo), e.currentTarget));
     el.querySelectorAll('[data-avulso-resp]').forEach(b => b.addEventListener('click', () => HUB_ENTREVISTA_DESLIGAMENTO.abrirRespostas(avulsos[Number(b.dataset.avulsoResp)])));
     el.querySelectorAll('[data-avulso-copiar]').forEach(b => b.addEventListener('click', () => HUB_ENTREVISTA_DESLIGAMENTO.copiarLink(avulsos[Number(b.dataset.avulsoCopiar)])));
     redesenhar();
@@ -502,6 +506,157 @@
   // função do banco já devolve sem nome/e-mail/telefone/CPF, na ordem do
   // questionário. Planilha 30 = questionário antigo, com outras perguntas.
   const COLUNAS_DO_RH = new Set(['Unidade', 'Departamento', 'Motivo do Desligamento', 'Submotivo de Desligamento', 'Data do Desligamento']);
+  // Datas que o Excel gravou como número de série (ex.: 46228)
+  function valorRespostaForms(pergunta, v) {
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return U.fmtDateBR(s);
+    if (/data|demiss|admiss/i.test(pergunta) && /^\d{5}(\.\d+)?$/.test(s) && +s > 30000 && +s < 60000)
+      return U.fmtDateBR(new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * 864e5).toISOString().slice(0, 10));
+    return s;
+  }
+
+  // ------------------------------------------------------------------
+  // Exportar Excel: a lista com os filtros atuais + as respostas das
+  // entrevistas dessas fichas (link do Hub e Forms). Sem contato, CPF e
+  // e-mail — a "matrícula" da Feedz é o celular da pessoa.
+  // ------------------------------------------------------------------
+  const COLUNAS_FORA_DA_EXPORTACAO = new Set(['ID', 'Hora de início', 'Hora de conclusão', 'Hora da última modificação', 'Questionário',
+    'Email', 'Nome', 'Nome2', 'E-mail:', 'Seu nome completo', 'Seu e-mail']);
+  // Perguntas do link do Hub que na planilha 34 têm outro enunciado (mesma
+  // pergunta, mesmas opções) → vão para a coluna da planilha.
+  const PERGUNTA_LINK_NA_PLANILHA = {
+    'Como você considera a COMUNICAÇÃO DA EMPRESA, em relação às políticas, diretrizes e normas?': 'Comunicação',
+    'Como você avalia essa prática de FEEDBACKS recebidos?': 'Como você avalia essa prática?'
+  };
+  const chavePergunta = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  const chaveSolta = s => n(chavePergunta(s)).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  function celulaData(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? { t: 'n', z: 'dd/mm/yyyy', v: (Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86400000 } : null;
+  }
+  function folha(cab, linhas, larguras) {
+    const ws = XLSX.utils.aoa_to_sheet([cab].concat(linhas));
+    ws['!cols'] = cab.map((c, i) => ({ wch: (larguras && larguras[i]) || Math.min(60, Math.max(14, String(c).length + 2)) }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(linhas.length, 1), c: cab.length - 1 } }) };
+    return ws;
+  }
+  async function rpcTudo(fn) {
+    let all = [], from = 0;
+    for (;;) {
+      const { data, error } = await sb.rpc(fn).range(from, from + 999);
+      if (error) throw error;
+      all = all.concat(data || []);
+      if (!data || data.length < 1000) return all;
+      from += 1000;
+    }
+  }
+
+  async function exportarExcel(rows, btn) {
+    if (!window.XLSX) { alert('Não foi possível gerar o Excel: a biblioteca de planilhas não carregou. Recarregue a página e tente de novo.'); return; }
+    if (!rows.length) { alert('Não há desligamentos na lista com os filtros atuais.'); return; }
+    const rotulo = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Gerando Excel...';
+    try {
+      const canalNome = Object.fromEntries(CANAIS);
+      const nota1 = v => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+
+      // 1) Lista de desligamentos
+      const cab1 = ['ID', 'Data da solicitação', 'Solicitante', 'Colaborador', 'Cargo', 'Unidade', 'Loja / departamento', 'Admissão', 'Demissão',
+        'Tempo de casa (dias)', 'Tipo', 'Tipo do desligamento', 'Motivo', 'Detalhe do motivo', 'Status na Feedz', 'Status da entrevista', 'Fila',
+        'Canal da entrevista', 'Link gerado em', 'Situação do link', 'Entrevista respondida em', 'Extra de Natal', 'Critérios (0 a 4)',
+        'AVE 45 - gestor', 'AVE 90 - gestor', 'Média AVE', 'Feedbacks recebidos', 'Situação no Headcount', 'Observações'];
+      const linhas1 = rows.map(r => {
+        const canal = canalEntrevista(r);
+        return [r.id || '', celulaData(r.data_solicitacao), r.solicitante || '', r.nome || '', r.cargo || '', r.unidade || '', r.departamento || '',
+          celulaData(r.data_admissao), celulaData(r.data_demissao), r.tempo_casa, r.db.tipo || '', r.db.tipoDesligamento || '', r.db.motivo || '',
+          r.db.motivoDetalhe || '', r.db.statusFeedz || '', statusEntrevista(r), FILAS[fila(r)][0],
+          canal === 'nenhum' ? '' : canalNome[canal], celulaData(dataLink(r)), r.link ? situacaoLink(r.link) : '', celulaData(dataResposta(r)),
+          r.db.extraNatal ? 'Sim' : 'Não', r.criterios, nota1(r.nota45), nota1(r.nota90), nota1(r.mediaAve), r.feedbacks, r.situacaoHeadcount || '',
+          r.db.observacoes || ''];
+      });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, folha(cab1, linhas1, [8, 14, 28, 36, 28, 26, 32, 12, 12, 12, 24, 40, 40, 30, 20, 16, 30, 26, 14, 28, 14, 10, 10, 10, 10, 10, 10, 16, 50]), 'Desligamentos');
+
+      // 2) Respostas das entrevistas dessas fichas
+      const porFicha = new Map(rows.map(r => [String(r.db.id), r]));
+      let forms = [], ordem = [];
+      const temForms = rows.some(r => r.forms && r.forms.length);
+      if (temForms) {
+        forms = (await rpcTudo('controle_desligamento_respostas_forms_exportar')).filter(x => porFicha.has(String(x.controle_id)));
+        const { data, error } = await sb.from('entrevista_pesquisa_perguntas').select('origem,ordem,pergunta').order('ordem');
+        if (error) throw error;
+        ordem = data || [];
+      }
+      const baseResp = (r, canal, dataResp) => [r.id || '', r.nome || '', r.unidade || '', r.departamento || '', celulaData(r.data_demissao), canal, celulaData(dataResp)];
+      const cabBase = ['ID', 'Colaborador', 'Unidade', 'Loja / departamento', 'Demissão', 'Canal', 'Respondida em'];
+
+      // Colunas de perguntas: na ordem do questionário; perguntas do link que
+      // têm o mesmo texto da planilha 34 caem na mesma coluna.
+      function montarAba(origem, respostasForms, respostasLink) {
+        const colunas = [], idx = new Map();
+        // Forms: a coluna é o texto exato da pergunta (há perguntas diferentes
+        // que só mudam na pontuação final). Link: mesmo texto; se não houver,
+        // aceita a diferença de pontuação/prefixo só quando aponta para UMA
+        // coluna — na dúvida, a pergunta do link ganha coluna própria.
+        const coluna = (titulo, doLink) => {
+          const k = chavePergunta(titulo);
+          if (idx.has(k)) return idx.get(k);
+          let i;
+          if (doLink) {
+            const ks = chaveSolta(titulo);
+            let cands = colunas.map((c, j) => j).filter(j => chaveSolta(colunas[j]) === ks);
+            if (!cands.length && ks.length > 30) cands = colunas.map((c, j) => j).filter(j => { const c2 = chaveSolta(colunas[j]); return c2.length > 30 && (c2.startsWith(ks) || ks.startsWith(c2)); });
+            if (cands.length === 1) i = cands[0];
+          }
+          if (i === undefined) { i = colunas.length; colunas.push(k); }
+          idx.set(k, i);
+          return i;
+        };
+        const usa = titulo => !COLUNAS_FORA_DA_EXPORTACAO.has(chavePergunta(titulo)) && !(origem === 'p34' && COLUNAS_DO_RH.has(chavePergunta(titulo))) &&
+          !/^(digite seu cpf|seu telefone)/i.test(chavePergunta(titulo));
+        ordem.filter(o => o.origem === origem && usa(o.pergunta)).forEach(o => coluna(o.pergunta));
+        const linhas = [];
+        for (const x of respostasForms) {
+          const r = porFicha.get(String(x.controle_id)); const vals = [];
+          for (const [k, v] of Object.entries(x.respostas || {})) {
+            if (!usa(k) || v === null || v === undefined || String(v).trim() === '') continue;
+            vals[coluna(k)] = typeof v === 'number' && !/data|demiss|admiss/i.test(k) ? v : valorRespostaForms(k, v);
+          }
+          linhas.push({ base: baseResp(r, 'Forms', x.data_conclusao), vals });
+        }
+        const M = window.HUB_ED_MODELO, PR = window.HUB_ED_RENDER;
+        for (const r of respostasLink) {
+          const vals = [];
+          for (const qidStr of Object.keys(r.link.respostas || {}).sort((a, b) => Number(a) - Number(b))) {
+            const q = M && M.PERGUNTAS[Number(qidStr)];
+            if (!q || !usa(q.titulo)) continue;
+            const leg = PR.respostaLegivel(Number(qidStr), q, r.link.respostas[qidStr]);
+            if (leg === null || leg === undefined || leg === '') continue;
+            vals[coluna(PERGUNTA_LINK_NA_PLANILHA[q.titulo] || q.titulo, true)] = Array.isArray(leg) ? leg.join('; ') : leg;
+          }
+          linhas.push({ base: baseResp(r, 'Link do Hub', dataResposta(r)), vals });
+        }
+        // só as colunas com alguma resposta
+        const usadas = colunas.map((_, i) => linhas.some(l => l.vals[i] !== undefined));
+        const cab = cabBase.concat(colunas.filter((_, i) => usadas[i]));
+        const dados = linhas.map(l => l.base.concat(colunas.map((_, i) => (l.vals[i] === undefined ? '' : l.vals[i])).filter((_, i) => usadas[i])));
+        return { cab, dados };
+      }
+      const comLink = rows.filter(r => r.link && r.link.status === 'Preenchido' && r.link.respostas);
+      const atual = montarAba('p34', forms.filter(x => !x.questionario_antigo), comLink);
+      const antigo = montarAba('p30', forms.filter(x => x.questionario_antigo), []);
+      const largBase = [8, 36, 26, 32, 12, 14, 14];
+      if (atual.dados.length) XLSX.utils.book_append_sheet(wb, folha(atual.cab, atual.dados, largBase), 'Respostas (atual)');
+      if (antigo.dados.length) XLSX.utils.book_append_sheet(wb, folha(antigo.cab, antigo.dados, largBase), 'Respostas (antigo 2023-2025)');
+
+      XLSX.writeFile(wb, `controle-desligamento_${U.todayISO()}.xlsx`, { compression: true });
+    } catch (err) {
+      alert('Não consegui gerar o Excel: ' + (err.message || err));
+    } finally {
+      btn.disabled = false; btn.textContent = rotulo;
+    }
+  }
+
   async function abrirRespostasForms(r) {
     const m = modal('Respostas — ' + esc(r.nome), 'Entrevista de desligamento respondida pelo Forms', '<p class="sub">Carregando respostas...</p>');
     const corpo = m.lastElementChild.lastElementChild; // área de conteúdo do modal()
@@ -518,14 +673,7 @@
         if (!x.questionario_antigo && COLUNAS_DO_RH.has(String(x.pergunta).trim())) continue;
         grupos.get(x.planilha_id).itens.push(x);
       }
-      // Datas que o Excel gravou como número de série (ex.: 46228)
-      const valor = (pergunta, v) => {
-        const s = String(v).trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return U.fmtDateBR(s);
-        if (/data|demiss|admiss/i.test(pergunta) && /^\d{5}(\.\d+)?$/.test(s) && +s > 30000 && +s < 60000)
-          return U.fmtDateBR(new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * 864e5).toISOString().slice(0, 10));
-        return s;
-      };
+      const valor = valorRespostaForms;
       corpo.innerHTML = !grupos.size ? '<p class="sub" style="color:var(--muted)">Sem respostas registradas.</p>' : Array.from(grupos.values()).map(g => `
         <div style="margin-bottom:18px">
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Respondida em <b>${U.fmtDateBR(g.data) || '—'}</b>${g.antigo ? ' · <b>questionário antigo (2023–2025)</b>, com perguntas diferentes das atuais' : ''}</div>

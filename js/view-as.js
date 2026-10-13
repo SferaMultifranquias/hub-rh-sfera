@@ -343,7 +343,7 @@
     sb.rpc = (fn, ...args) => (RPC_SO_LEITURA.has(fn) ? realRpc(fn, ...args) : makeBlockedChain());
   }
   const RPC_SO_LEITURA = new Set(['controle_desligamento_indicadores', 'entrevistas_desligamento_indicadores',
-    'controle_desligamento_respostas_forms_resumo', 'controle_desligamento_respostas_forms',
+    'controle_desligamento_respostas_forms_resumo', 'controle_desligamento_respostas_forms', 'controle_desligamento_respostas_forms_exportar',
     // Pesquisa de Satisfação: o recorte por área da conta simulada é refeito na
     // tela (HUB_METRICS_SATISFACAO.recortar com o HUB_USER simulado).
     'satisfacao_dados',
