@@ -10,7 +10,12 @@
   const { kpi, empty, card } = HUB_UI;
   const esc = U.escapeHtml;
 
-  const state = { ciclo: '', area: '', janela: 12, busca: '', ordem: 'menor', todos: false };
+  // simular: recalcula tudo sem as avaliações sinalizadas para conferência (nada é apagado).
+  const state = { ciclo: '', area: '', janela: 12, busca: '', ordem: 'menor', todos: false, simular: false };
+  // Ciclos do histórico de cada loja no card "Onde está a insatisfação".
+  const CICLOS_HISTORICO_LOJA = 6;
+  // Mudança no número de respondentes a partir da qual a variação pede cuidado.
+  const ALERTA_RESPONDENTES = 0.2;
 
   const STYLE = `<style>
     .sf-top{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
@@ -21,8 +26,23 @@
     .sf-note{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
     #sec-ind-satisfacao .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
     @media (min-width:800px){#sec-ind-satisfacao .kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media (min-width:1150px){#sec-ind-satisfacao .kpi-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+    @media (min-width:1150px){#sec-ind-satisfacao .kpi-grid.sf-k4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    #sec-ind-satisfacao .kpi.sf-main .val{font-size:34px}
     #sec-ind-satisfacao .card{margin-bottom:0}
+    .sf-aviso{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.5;color:#12406F;background:#EAF2FE;border:1px solid #C5DCF8;border-radius:10px;padding:10px 12px;margin-bottom:14px}
+    .sf-aviso.sim{color:#7a3e00;background:#FFF4E0;border-color:#F5D9A8}
+    .sf-aviso svg{width:16px;height:16px;flex:none;margin-top:2px;stroke:currentColor;fill:none;stroke-width:2}
+    .sf-aviso button{background:none;border:none;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}
+    .sf-pnd{display:flex;height:16px;min-width:170px;border-radius:8px;overflow:hidden;background:var(--bg)}
+    .sf-pnd i{display:flex;align-items:center;justify-content:center;font-style:normal;font-size:9.5px;font-weight:700;color:#fff;overflow:hidden}
+    .sf-pnd i.n{color:#5b4200}
+    .sf-selo{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:4px;vertical-align:middle}
+    .sf-selo.up{background:#E6F7F0;color:#0f8a4c}.sf-selo.down{background:#FDECEC;color:var(--critical)}.sf-selo.at{background:#FFF6E0;color:#9a6b00}
+    .sf-lj td,.sf-lj th{white-space:nowrap}
+    .sf-lj td.h{text-align:center;font-weight:700;font-size:11.5px;padding:6px 7px}
+    .sf-lj td.wrap{white-space:normal;min-width:180px;font-size:11.5px;color:var(--text2)}
+    .sf-conf{display:flex;align-items:center;gap:8px;font-size:12px;margin:0 0 10px;cursor:pointer}
+    .sf-conf input{margin:0}
     .sf-gap{height:16px}
     .sf-rank td,.sf-rank th{white-space:nowrap}
     .sf-rank tbody tr{cursor:pointer}
@@ -79,6 +99,50 @@
     return `<div class="sf-cell"><div class="sf-bar"><i style="width:${Math.max(2, v * 10)}%;background:${corNota(v)}"></i></div><b style="color:${corNota(v)}">${M.fmtNota(v)}</b></div>`;
   }
   function chart(id, h) { return `<div class="chart-h" style="height:${h || 280}px"><canvas id="${id}"></canvas></div>`; }
+  const corNps = v => { const z = M.zonaNps(v); return z ? z.cor : 'var(--muted)'; };
+  // Variação do NPS a partir dos valores já arredondados, para bater com o que a tela mostra (+43 → +44 = ▲ 1).
+  const dNps = (s, sa) => s && sa && s.nps != null && sa.nps != null ? Math.round(s.nps) - Math.round(sa.nps) : null;
+  // Cartão em destaque (o NPS é o indicador principal do módulo).
+  const kpiMain = (label, value, sub, cor) => kpi(label, value, sub, cor).replace('class="kpi"', 'class="kpi sf-main"');
+  const fmtPontos = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  // Barra promotores · neutros · detratores (o número aparece no trecho quando cabe).
+  function pndBar(s) {
+    if (!s || !s.n) return '—';
+    const seg = (cls, cor, qtd, nome) => {
+      const p = qtd / s.n;
+      return qtd ? `<i class="${cls}" style="width:${(p * 100).toFixed(1)}%;background:${cor}" title="${nome}: ${U.fmtInt(qtd)} de ${U.fmtInt(s.n)} (${U.fmtPct(p, 0)})">${p >= 0.14 ? U.fmtPct(p, 0) : ''}</i>` : '';
+    };
+    return `<div class="sf-pnd">${seg('p', '#1baf7a', s.promotores, 'Promotores (9-10)')}${seg('n', '#f2c14e', s.neutros, 'Neutros (7-8)')}${seg('d', '#e34948', s.detratores, 'Detratores (0-6)')}</div>`;
+  }
+  function seloTendencia(t) {
+    if (!t) return '';
+    return t === 'subindo'
+      ? '<span class="sf-selo up" title="Três variações seguidas para cima">▲ subindo há 3 ciclos</span>'
+      : '<span class="sf-selo down" title="Três variações seguidas para baixo">▼ caindo há 3 ciclos</span>';
+  }
+  // "ago/26 a out/26" (ou só o ciclo, quando a área tem um ciclo só).
+  const periodo = ms => ms.length > 1 ? `${M.rotuloMes(ms[0])} a ${M.rotuloMes(ms[ms.length - 1])}` : M.rotuloMes(ms[0]);
+
+  // Faixa no topo quando a simulação está ligada.
+  function avisoSimulacao(ctx) {
+    if (!state.simular) return '';
+    const n = M.sinalizadas(ctx.brutas, state.ciclo, state.area || null).length;
+    return `<div class="sf-aviso sim">${HUB_ICON('alert')}<span><b>Simulação ligada.</b> Os números desta tela estão sem as avaliações sinalizadas para conferência (${U.fmtInt(n)} neste ciclo${state.area ? ', nesta área' : ''}). Nada foi apagado. <button type="button" id="sf-sim-off">Voltar aos números oficiais</button></span></div>`;
+  }
+
+  // Aviso quando o número de respondentes muda muito de um ciclo para o outro: a
+  // variação mistura mudança de opinião com mudança de quem respondeu.
+  function avisoRespondentes(g, ml) {
+    if (g.respondentes == null || !g.respondentesAnt) return '';
+    const d = (g.respondentes - g.respondentesAnt) / g.respondentesAnt;
+    if (Math.abs(d) <= ALERTA_RESPONDENTES) return '';
+    const ant = M.rotuloMes(g.cicloAnterior);
+    const mesmas = ml
+      ? ` ${U.fmtInt(ml.lojas)} lojas/áreas responderam nos dois ciclos; nelas o NPS foi de <b>${M.fmtNps(ml.anterior.nps)}</b> para <b>${M.fmtNps(ml.atual.nps)}</b>. Leia a variação de cada área pela coluna "Mesmas lojas".`
+      : ' Parte da variação pode vir só da mudança de quem respondeu.';
+    return `<div class="sf-aviso">${HUB_ICON('info')}<span>O número de respondentes ${d < 0 ? 'caiu' : 'subiu'} de <b>${U.fmtInt(g.respondentesAnt)}</b> (${esc(ant)}) para <b>${U.fmtInt(g.respondentes)}</b> (${d < 0 ? '−' : '+'}${U.fmtPct(Math.abs(d), 0)}).${mesmas}</span></div>`;
+  }
 
   // ---- Topo ----------------------------------------------------------------
   function topo(ctx) {
@@ -112,19 +176,40 @@
     const fx = M.faixa(g.geral.media), zn = M.zonaNps(g.geral.nps);
     const partSub = g.aptos ? `${U.fmtPct(g.participacao, 0)} de ${U.fmtInt(g.aptos)} gestores aptos` : 'sem a base de aptos neste ciclo';
     const varResp = g.respondentesAnt != null && g.respondentes != null ? g.respondentes - g.respondentesAnt : null;
+    const vsAnt = g.cicloAnterior ? ` vs pesquisa ${M.rotuloMes(g.cicloAnterior)}` : '';
+    const ac = M.acumuladoGeral(idx, state.ciclo);
+    // Mesmas lojas: só com a visão completa (sem ela as respostas vêm sem loja).
+    const ml = acesso.completo ? M.mesmasLojas(respostas, state.ciclo, g.cicloAnterior, null) : null;
     const kpis = `<div class="kpi-grid">
-      ${kpi(acesso.completo ? 'Nota média do Escritório' : 'Nota média das suas áreas', M.fmtNota(g.geral.media), `${fx ? fx.rotulo : ''} ${varHtml(g.varNota, M.fmtVarNota)} vs pesquisa ${g.cicloAnterior ? M.rotuloMes(g.cicloAnterior) : '—'}`, fx ? fx.cor : null)}
-      ${kpi('NPS', M.fmtNps(g.geral.nps), `${zn ? zn.rotulo : ''} ${varHtml(g.varNps, M.fmtVarNps)}`, zn ? zn.cor : null)}
+      ${kpiMain(acesso.completo ? 'NPS do Escritório' : 'NPS das suas áreas', M.fmtNps(g.geral.nps), `${zn ? zn.rotulo : ''} ${varHtml(dNps(g.geral, g.geralAnterior), M.fmtVarNps)}${vsAnt}${ml ? ` · mesmas lojas ${varHtml(dNps(ml.atual, ml.anterior), M.fmtVarNps)}` : ''}`, zn ? zn.cor : null)}
+      ${ac && ac.ciclos.length > 1 ? kpi(`NPS de ${ac.ciclos.length} ciclos`, M.fmtNps(ac.s.nps), `${esc(periodo(ac.ciclos))} somados · ${U.fmtInt(ac.s.n)} avaliações${seloTendencia(M.tendenciaGeral(idx, state.ciclo))}`, corNps(ac.s.nps)) : ''}
+      ${kpi('Nota média', M.fmtNota(g.geral.media), `${fx ? fx.rotulo : ''} ${varHtml(g.varNota, M.fmtVarNota)}${vsAnt}`, fx ? fx.cor : null)}
       ${kpi('Gestores que responderam', g.respondentes != null ? U.fmtInt(g.respondentes) : '—', partSub + (varResp != null ? ` · ${varResp >= 0 ? '+' : '−'}${Math.abs(varResp)} vs ciclo anterior` : ''))}
-      ${kpi('Melhor avaliada', esc(g.melhor ? g.melhor.area : '—'), g.melhor ? `nota ${M.fmtNota(g.melhor.atual.media)} · NPS ${M.fmtNps(g.melhor.atual.nps)}` : '', '#0f8a4c')}
-      ${g.pior ? kpi('Menor nota', esc(g.pior.area), `nota ${M.fmtNota(g.pior.atual.media)} · NPS ${M.fmtNps(g.pior.atual.nps)}`, corNota(g.pior.atual.media)) : ''}
+      ${kpi('Maior NPS', esc(g.melhor ? g.melhor.area : '—'), g.melhor ? `NPS ${M.fmtNps(g.melhor.atual.nps)} · nota ${M.fmtNota(g.melhor.atual.media)}` : '', '#0f8a4c')}
+      ${g.pior ? kpi('Menor NPS', esc(g.pior.area), `NPS ${M.fmtNps(g.pior.atual.nps)} · nota ${M.fmtNota(g.pior.atual.media)}`, corNps(g.pior.atual.nps)) : ''}
     </div>`;
 
-    const rank = card(`Ranking das áreas — ${esc(mes)}`, 'trophy', `
-      <div class="table-wrap"><table class="dt sf-rank"><thead><tr><th>Área</th><th>Nota média</th><th>Var.</th><th class="num">NPS</th><th class="num">Detratores (0-6)</th><th>Principal ponto a melhorar</th><th class="num">Respostas</th></tr></thead><tbody>
-      ${g.areas.map(a => `<tr data-area="${esc(a.area)}"><td><b>${esc(a.area)}</b></td><td>${barraNota(a.atual.media)}</td><td>${varHtml(a.varNota, M.fmtVarNota)}</td><td class="num" style="color:${(M.zonaNps(a.atual.nps) || {}).cor}"><b>${M.fmtNps(a.atual.nps)}</b></td><td class="num">${pct(a.atual.pctDetratores)}</td><td>${esc(a.atual.principal || '—')}${a.atual.pctNada != null ? ` <span class="sf-tag" title="Respostas que marcaram só 'Nada a melhorar'">${U.fmtPct(a.atual.pctNada, 0)} nada a melhorar</span>` : ''}</td><td class="num">${U.fmtInt(a.atual.n)}</td></tr>`).join('')}
+    const peso = M.pesoResposta(g.respondentes || (g.areas[0] && g.areas[0].atual.n));
+    const linhaRank = a => {
+      const acA = M.acumulado(idx, a.area, state.ciclo);
+      const mlA = acesso.completo ? M.mesmasLojas(respostas, state.ciclo, a.cicloAnterior, a.area) : null;
+      const sr = M.semReuniao(idx.porArea.get(a.area).get(state.ciclo));
+      return `<tr data-area="${esc(a.area)}"><td><b>${esc(a.area)}</b></td>
+        <td class="num" style="color:${corNps(a.atual.nps)}"><b style="font-size:13.5px">${M.fmtNps(a.atual.nps)}</b></td>
+        <td>${varHtml(dNps(a.atual, a.anterior), M.fmtVarNps)}</td>
+        ${acesso.completo ? `<td title="${mlA ? `${mlA.lojas} lojas/áreas responderam nos dois ciclos: NPS de ${M.fmtNps(mlA.anterior.nps)} para ${M.fmtNps(mlA.atual.nps)}` : 'Sem lojas em comum com o ciclo anterior'}">${mlA ? varHtml(dNps(mlA.atual, mlA.anterior), M.fmtVarNps) : '<span class="sf-var eq">—</span>'}</td>` : ''}
+        <td class="num" title="${acA ? `${esc(periodo(acA.ciclos))} somados · ${acA.s.n} avaliações` : ''}">${acA && acA.ciclos.length > 1 ? `<span style="color:${corNps(acA.s.nps)};font-weight:700">${M.fmtNps(acA.s.nps)}</span>` : '—'}${seloTendencia(M.tendenciaArea(idx, a.area, state.ciclo))}</td>
+        <td>${pndBar(a.atual)}</td>
+        <td class="num">${M.fmtNota(a.atual.media)} ${varHtml(a.varNota, M.fmtVarNota)}</td>
+        <td>${esc(a.atual.principal || '—')}${a.atual.pctNada != null ? ` <span class="sf-tag" title="Respostas que marcaram só 'Nada a melhorar'">${U.fmtPct(a.atual.pctNada, 0)} nada a melhorar</span>` : ''}${sr ? ` <span class="sf-tag" title="${sr.zero} de ${sr.n} responderam '0 reuniões' no mês">${U.fmtPct(sr.pct, 0)} sem reunião</span>` : ''}</td>
+        <td class="num">${U.fmtInt(a.atual.n)}</td></tr>`;
+    };
+    const rank = card(`Ranking das áreas pelo NPS — ${esc(mes)}`, 'trophy', `
+      <div class="table-wrap"><table class="dt sf-rank"><thead><tr><th>Área</th><th class="num">NPS</th><th>Var.</th>${acesso.completo ? '<th title="Variação do NPS só entre as lojas/áreas que responderam nos dois ciclos">Mesmas lojas</th>' : ''}<th class="num" title="NPS somando os últimos ${M.CICLOS_ACUMULADO} ciclos em que a área foi avaliada">NPS ${M.CICLOS_ACUMULADO} ciclos</th><th>Promotores · neutros · detratores</th><th class="num">Nota</th><th>Principal ponto a melhorar</th><th class="num">Respostas</th></tr></thead><tbody>
+      ${g.areas.map(linhaRank).join('')}
       </tbody></table></div>
-      <p class="sf-note">Clique numa área para ver a evolução, o que melhorar e os comentários. Variação contra o ciclo anterior em que a área foi avaliada.</p>`, { full: true });
+      <div class="sf-legend"><span><i style="background:#1baf7a"></i>Promotores (9-10)</span><span><i style="background:#f2c14e"></i>Neutros (7-8)</span><span><i style="background:#e34948"></i>Detratores (0-6)</span></div>
+      <p class="sf-note">Clique numa área para ver a evolução, o que melhorar e os comentários. Variação contra o ciclo anterior em que a área foi avaliada.${peso ? ` <b>Como ler o NPS:</b> com ${U.fmtInt(Math.round(100 / peso.umPasso))} respostas, cada loja que deixa de ser detratora soma ${fmtPontos(peso.umPasso)} pontos ao NPS de uma área (${fmtPontos(peso.doisPassos)} se virar promotora). Variação menor que isso é uma loja só; só trate como tendência o que se repete por três ciclos — por isso a coluna "NPS ${M.CICLOS_ACUMULADO} ciclos".` : ''}</p>`, { full: true });
 
     const ciclos = janelaCiclos(idx);
     const heat = card('Evolução por área — nota média por ciclo', 'barChart', `
@@ -136,7 +221,7 @@
       }).join('')}</tr>`).join('')}
       </tbody></table></div>${legendaFaixas()}<p class="sf-note">Colunas = mês em que a pesquisa foi aplicada; cada pesquisa avalia o mês anterior (a de set/26 avalia agosto).</p>`, { full: true });
 
-    const evo = card('Evolução geral', 'trendUp', chart('c-sf-evo-geral', 280) + `<p class="sf-note">Nota média de todas as respostas ${acesso.completo ? 'do Escritório' : 'das suas áreas'} no ciclo (linha azul, 0 a 10) e NPS (tracejada, −100 a +100).</p>`);
+    const evo = card('Evolução geral', 'trendUp', chart('c-sf-evo-geral', 280) + `<p class="sf-note">NPS de todas as respostas ${acesso.completo ? 'do Escritório' : 'das suas áreas'} no ciclo (linha azul), NPS somando ${M.CICLOS_ACUMULADO} ciclos (linha clara, oscila menos) e nota média (tracejada, 0 a 10).</p>`);
     const melh = card(`O que melhorar? — ${esc(mes)}`, 'lightbulb', chart('c-sf-melh-geral', 240) + '<p class="sf-note">% das avaliações em que cada ponto foi marcado (pode marcar mais de um), somando as áreas.</p>');
 
     let mx = '';
@@ -156,7 +241,60 @@
       }
     }
 
-    return kpis + rank + '<div class="sf-gap"></div>' + heat + '<div class="sf-gap"></div>' + `<div class="grid2">${evo}${melh}</div>` + mx + cardParticipacao() + comoLer(acesso);
+    return avisoSimulacao(ctx) + avisoRespondentes(g, ml) + kpis + rank + cardInsatisfacao(ctx) + cardConferir(ctx, null)
+      + '<div class="sf-gap"></div>' + heat + '<div class="sf-gap"></div>' + `<div class="grid2">${evo}${melh}</div>` + mx + cardParticipacao() + comoLer(acesso);
+  }
+
+  // ---- Onde está a insatisfação (visão completa) -----------------------------
+  // Lojas com média abaixo de 6,5 em todas as áreas: quanto das notas de 0 a 6
+  // elas concentram e se o caso é recorrente (histórico dos últimos ciclos).
+  function cardInsatisfacao(ctx) {
+    if (!ctx.acesso.completo) return '';
+    const { idx, respostas } = ctx;
+    const janela = idx.ciclos.filter(m => m <= state.ciclo).slice(-CICLOS_HISTORICO_LOJA);
+    const li = M.lojasInsatisfacao(respostas, state.ciclo, janela);
+    if (!li.totalDet && !li.ausentes.length) return '';
+    const lim = M.fmtNota(li.limite);
+    const cel = h => {
+      if (h.media == null) return '<td class="h" style="color:var(--muted)" title="Não respondeu">—</td>';
+      const f = M.faixa(h.media);
+      return `<td class="h" style="background:${f.fundo};color:${f.cor}">${M.fmtNota(h.media)}</td>`;
+    };
+    const situacao = l => (l.recorrente
+      ? `<span class="sf-selo down" title="Média abaixo de ${lim} em ${l.ciclosBaixos} dos ${l.ciclosRespondidos} ciclos respondidos">Recorrente · ${l.ciclosBaixos} de ${l.ciclosRespondidos}</span>`
+      : `<span class="sf-selo at" title="Média abaixo de ${lim} em ${l.ciclosBaixos} dos ${l.ciclosRespondidos} ciclos respondidos">Pontual</span>`)
+      + (l.conferir ? `<span class="sf-selo at" title="${l.suspeitas} avaliações sinalizadas (ver 'Respostas para conferir')">Conferir com a loja</span>` : '');
+    const resumo = li.criticas.length
+      ? `<p style="font-size:13px;margin:0 0 10px"><b>${U.fmtInt(li.criticas.length)} ${li.criticas.length === 1 ? 'loja concentra' : 'lojas concentram'} ${U.fmtPct(li.pctCriticas, 0)} das notas de 0 a 6</b> do ciclo (${U.fmtInt(li.detCriticas)} de ${U.fmtInt(li.totalDet)}). São as lojas/áreas com média abaixo de ${lim} somando todas as áreas avaliadas.</p>`
+      : `<p style="font-size:13px;margin:0 0 10px">Nenhuma loja/área com média abaixo de ${lim} neste ciclo. As ${U.fmtInt(li.totalDet)} notas de 0 a 6 estão espalhadas por ${U.fmtInt(li.outras.lojas)} lojas/áreas.</p>`;
+    const tabela = li.criticas.length ? `<div class="table-wrap" style="max-height:none"><table class="dt sf-lj"><thead><tr><th>Loja / área</th><th>Operação</th><th class="num">Média</th><th class="num">Notas 0-6</th><th class="num">Zeros</th><th>Áreas com nota zero</th>${li.janela.map(m => `<th title="Média da loja na pesquisa de ${esc(M.rotuloMes(m))}">${esc(M.rotuloMes(m))}</th>`).join('')}<th>Situação</th></tr></thead><tbody>
+      ${li.criticas.map(l => `<tr><td><b>${esc(l.nome)}</b></td><td>${esc(l.operacao)}</td><td class="num" style="color:${corNota(l.media)}"><b>${M.fmtNota(l.media)}</b></td><td class="num" title="Notas de 0 a 6 em: ${esc(l.areasBaixas.join(', '))}">${U.fmtInt(l.detratores)} de ${U.fmtInt(l.avaliacoes)}</td><td class="num">${U.fmtInt(l.zeros)}</td><td class="wrap">${esc(l.areasZero.join(', ') || '—')}</td>${l.historico.map(cel).join('')}<td>${situacao(l)}</td></tr>`).join('')}
+      </tbody></table></div>` : '';
+    const outras = li.criticas.length && li.outras.lojas ? ` As outras ${U.fmtInt(li.outras.detratores)} notas de 0 a 6 vieram de ${U.fmtInt(li.outras.lojas)} lojas/áreas com média de ${lim} ou mais.` : '';
+    const ausentes = li.ausentes.length
+      ? `<div class="sf-aviso" style="margin:12px 0 0">${HUB_ICON('alert')}<span><b>${li.ausentes.length === 1 ? 'Uma loja/área com média baixa' : `${li.ausentes.length} lojas/áreas com média baixa`} em ${esc(M.rotuloMes(li.cicloAnterior))} não ${li.ausentes.length === 1 ? 'respondeu' : 'responderam'} agora:</b> ${li.ausentes.map(a => `${esc(a.nome)} (${M.fmtNota(a.mediaAnterior)})`).join(', ')}. Quando uma loja insatisfeita deixa de responder, o NPS sobe sem que nada tenha melhorado.</span></div>`
+      : '';
+    return '<div class="sf-gap"></div>' + card(`Onde está a insatisfação — ${esc(M.rotuloCiclo(state.ciclo))}`, 'pin', `${resumo}${tabela}
+      <p class="sf-note">Colunas de mês = média da loja em todas as áreas em cada pesquisa ("—" = não respondeu). Passe o mouse em "Notas 0-6" para ver as áreas. Recorrente = média abaixo de ${lim} em 3 ou mais dos últimos ${li.janela.length} ciclos.${outras} Visão completa (RH): em loja, o respondente costuma ser o gerente — não repasse este recorte às áreas avaliadas.</p>${ausentes}`, { full: true });
+  }
+
+  // ---- Respostas para conferir ------------------------------------------------
+  // Avaliações em que a nota pode não medir o serviço. A simulação recalcula a tela
+  // sem elas; os dados continuam no banco.
+  function cardConferir(ctx, area) {
+    const lista = M.sinalizadas(ctx.brutas, state.ciclo, area);
+    if (!lista.length) return '';
+    const conta = k => lista.filter(x => x.sinal === k).length;
+    const partes = Object.keys(M.SINAIS).filter(k => conta(k)).map(k => `<b>${U.fmtInt(conta(k))}</b> — ${esc(M.SINAIS[k].charAt(0).toLowerCase() + M.SINAIS[k].slice(1))}`);
+    const comLoja = ctx.acesso.completo;
+    return '<div class="sf-gap"></div>' + card(`Respostas para conferir — ${esc(M.rotuloCiclo(state.ciclo))}`, 'alert', `
+      <p style="font-size:13px;margin:0 0 10px">${U.fmtInt(lista.length)} ${lista.length === 1 ? 'avaliação' : 'avaliações'}${area ? ' desta área' : ''} em que a nota pode não medir o serviço: ${partes.join('; ')}.</p>
+      <label class="sf-conf"><input type="checkbox" id="sf-sim"${state.simular ? ' checked' : ''}>Simular os indicadores sem essas avaliações (em todos os ciclos; nada é apagado)</label>
+      <details><summary style="cursor:pointer;font-size:12px;color:var(--p1)">Ver as ${U.fmtInt(lista.length)} avaliações</summary>
+      <div class="table-wrap" style="margin-top:10px;max-height:420px"><table class="dt"><thead><tr><th class="num">Nota</th>${area ? '' : '<th>Área</th>'}${comLoja ? '<th>Loja / área</th>' : ''}<th>Motivo</th><th>Comentário</th></tr></thead><tbody>
+      ${lista.map(x => `<tr><td class="num"><span class="sf-chip" style="background:${corNota(x.nota)}">${x.nota == null ? '—' : U.fmtInt(x.nota)}</span></td>${area ? '' : `<td>${esc(x.area)}</td>`}${comLoja ? `<td>${esc(x.loja || '—')}</td>` : ''}<td>${esc(x.motivo)}</td><td style="white-space:normal;min-width:220px">${esc(x.comentario || '—')}</td></tr>`).join('')}
+      </tbody></table></div></details>
+      <p class="sf-note">Confirme com a loja antes de levar essas notas à área como insatisfação. Para não depender disso, vale incluir no formulário a opção "não tive contato com a área neste mês".</p>`, { full: true });
   }
 
   // ---- Participação por loja (só Administrador) -----------------------------
@@ -213,10 +351,12 @@
   function comoLer(acesso) {
     return '<div class="sf-gap"></div>' + card('Como ler', 'info', `<div class="sf-note" style="font-size:12px;color:var(--text2)">
       <p><b>Ciclo</b>: a pesquisa aplicada num mês avalia o <b>mês anterior</b> — a de setembro avalia agosto, e assim por diante. Os ciclos levam o nome do mês da pesquisa, com o mês avaliado entre parênteses (ref.).</p>
+      <p><b>NPS</b> (indicador principal): % de notas 9-10 (promotores) − % de notas 0-6 (detratores), de −100 a +100. As notas 7 e 8 são neutras. Zonas: excelência ≥ 75, qualidade 50 a 74, aperfeiçoamento 0 a 49, crítica abaixo de 0. É o NPS aplicado à nota de satisfação com o suporte — não é pesquisa de recomendação.</p>
+      <p><b>NPS de ${M.CICLOS_ACUMULADO} ciclos</b>: o mesmo cálculo somando as respostas dos últimos ${M.CICLOS_ACUMULADO} ciclos. Com poucas respostas por mês, uma única loja move o NPS de uma área em vários pontos; somando os ciclos o número oscila menos. O selo "subindo/caindo há 3 ciclos" só aparece com três variações seguidas na mesma direção.</p>
       <p><b>Nota média</b>: média das notas de 0 a 10 dadas no ciclo. Faixas: ótimo ≥ 9, bom 8 a 8,9, atenção 7 a 7,9, crítico abaixo de 7.</p>
-      <p><b>NPS</b>: % de notas 9-10 (promotores) − % de notas 0-6 (detratores), de −100 a +100. Zonas: excelência ≥ 75, qualidade 50 a 74, aperfeiçoamento 0 a 49, crítica abaixo de 0.</p>
+      ${acesso.completo ? '<p><b>Mesmas lojas</b>: variação calculada só com as lojas/áreas que responderam nos dois ciclos. Separa a mudança de opinião da mudança de quem respondeu.</p>' : ''}
+      <p><b>Respostas para conferir</b>: nota de 0 a 6 que marcou só "Nada a melhorar" e comentários de quem diz ter pouco contato com a área. A simulação mostra os indicadores sem elas; os números oficiais não mudam.</p>
       <p><b>Gestores aptos</b>: ativos com a tag <i>pesquisa.satisfação</i> no cadastro (foto do dia do upload, mesma regra do Boletim).</p>
-      <p><b>Atenção</b>: há notas 0 dadas por quem não usa a área ("Não utilizo", "Desconheço o setor"). Elas puxam a média para baixo; vale incluir a opção "Não utilizo" no formulário.</p>
       ${acesso.completo ? '' : '<p><b>Sigilo</b>: você vê só as áreas liberadas no seu acesso, sem a loja ou operação de quem respondeu. Comentários são de gestores identificáveis por quem conhece o contexto — trate como confidencial.</p>'}
     </div>`, { full: true });
   }
@@ -230,21 +370,33 @@
     const s = r.atual, fx = M.faixa(s.media), zn = M.zonaNps(s.nps);
     const vs = r.cicloAnterior ? ` vs pesquisa ${M.rotuloMes(r.cicloAnterior)}` : '';
     const mes = M.rotuloCiclo(state.ciclo);
-    const kpis = `<div class="kpi-grid">
-      ${kpi('Nota média', M.fmtNota(s.media), `${fx.rotulo} ${varHtml(r.varNota, M.fmtVarNota)}${vs}`, fx.cor)}
-      ${kpi('NPS', M.fmtNps(s.nps), `${zn.rotulo} ${varHtml(r.varNps, M.fmtVarNps)}`, zn.cor)}
-      ${kpi('Promotores (9-10)', pct(s.pctPromotores), `${U.fmtInt(s.promotores)} de ${U.fmtInt(s.n)}`, '#0f8a4c')}
-      ${kpi('Detratores (0-6)', pct(s.pctDetratores), `${U.fmtInt(s.detratores)} de ${U.fmtInt(s.n)}`, 'var(--critical)')}
-      ${kpi('Avaliações', U.fmtInt(s.n), r.anterior ? `${U.fmtInt(r.anterior.n)} no ciclo anterior` : '')}
-    </div>`;
+    const ac = M.acumulado(idx, area, state.ciclo);
+    const ml = acesso.completo ? M.mesmasLojas(respostas, state.ciclo, r.cicloAnterior, area) : null;
+    const peso = M.pesoResposta(s.n);
+    const rowsCiclo = (idx.porArea.get(area).get(state.ciclo)) || [];
+    const sr = M.semReuniao(rowsCiclo);
+    const srAnt = r.cicloAnterior ? M.semReuniao(idx.porArea.get(area).get(r.cicloAnterior)) : null;
+    const cartoes = [
+      kpiMain('NPS', M.fmtNps(s.nps), `${zn.rotulo} ${varHtml(dNps(r.atual, r.anterior), M.fmtVarNps)}${vs}${ml ? ` · mesmas lojas ${varHtml(dNps(ml.atual, ml.anterior), M.fmtVarNps)}` : ''}`, zn.cor),
+      ac && ac.ciclos.length > 1 ? kpi(`NPS de ${ac.ciclos.length} ciclos`, M.fmtNps(ac.s.nps), `${esc(periodo(ac.ciclos))} somados · ${U.fmtInt(ac.s.n)} avaliações${seloTendencia(M.tendenciaArea(idx, area, state.ciclo))}`, corNps(ac.s.nps)) : '',
+      kpi('Nota média', M.fmtNota(s.media), `${fx.rotulo} ${varHtml(r.varNota, M.fmtVarNota)}${vs}`, fx.cor),
+      kpi('Promotores (9-10)', pct(s.pctPromotores), `${U.fmtInt(s.promotores)} de ${U.fmtInt(s.n)}`, '#0f8a4c'),
+      kpi('Detratores (0-6)', pct(s.pctDetratores), `${U.fmtInt(s.detratores)} de ${U.fmtInt(s.n)}`, 'var(--critical)'),
+      kpi('Avaliações', U.fmtInt(s.n), `1 resposta = ${fmtPontos(peso.umPasso)} pontos de NPS${r.anterior ? ` · ${U.fmtInt(r.anterior.n)} no ciclo anterior` : ''}`),
+      sr ? kpi('Lojas sem reunião no mês', pct(sr.pct), `${U.fmtInt(sr.zero)} de ${U.fmtInt(sr.n)} responderam "0 reuniões"${srAnt ? ` · ${pct(srAnt.pct)} no ciclo anterior` : ''}`, sr.pct > 0.5 ? 'var(--critical)' : sr.pct > 0.25 ? '#c98500' : '#0f8a4c') : ''
+    ].filter(Boolean);
+    const kpis = `<div class="kpi-grid${cartoes.length > 6 ? ' sf-k4' : ''}">${cartoes.join('')}</div>`;
 
-    const extra = M.distribuicaoExtra((idx.porArea.get(area).get(state.ciclo)) || []);
+    const extra = M.distribuicaoExtra(rowsCiclo);
     const blocos = [
-      card(`Evolução — ${esc(area)}`, 'trendUp', chart('c-sf-evo', 290) + '<p class="sf-note">Nota média (linha azul, 0 a 10) e NPS (tracejada, −100 a +100) por ciclo.</p>'),
+      card(`Evolução — ${esc(area)}`, 'trendUp', chart('c-sf-evo', 290) + `<p class="sf-note">NPS do ciclo (linha azul), NPS somando ${M.CICLOS_ACUMULADO} ciclos (linha clara, oscila menos) e nota média (tracejada, 0 a 10).</p>`),
       card(`Distribuição das notas — ${esc(mes)}`, 'barChart', chart('c-sf-dist', 290) + '<p class="sf-note">Vermelho: detratores (0-6) · amarelo: neutros (7-8) · verde: promotores (9-10).</p>'),
       card(`O que melhorar? — ${esc(mes)}`, 'lightbulb', chart('c-sf-melh', 230) + tabelaMelhorar(idx, area))
     ];
-    if (extra.length) blocos.push(card(`Reuniões do time com a loja no mês — ${esc(mes)}`, 'handshake', chart('c-sf-extra', 230) + '<p class="sf-note">Pergunta "Quantas reuniões o time realizou com você este mês?".</p>'));
+    if (extra.length) {
+      blocos.push(card(`Reuniões do time com a loja no mês — ${esc(mes)}`, 'handshake', chart('c-sf-extra', 230) + '<p class="sf-note">Pergunta "Quantas reuniões o time realizou com você este mês?".</p>'));
+      blocos.push(card('Lojas sem reunião no mês — evolução', 'trendDown', chart('c-sf-reun', 230) + '<p class="sf-note">% dos gestores que responderam "0 reuniões" em cada pesquisa. Quanto menor, melhor.</p>'));
+    }
     if (acesso.completo) blocos.push(card(`Nota por operação — ${esc(mes)}`, 'building', tabelaOperacoes(M.porOperacao(respostas, state.ciclo, area))));
 
     let lojas = '';
@@ -257,7 +409,7 @@
         <p class="sf-note">Visão completa (RH). Loja com 1 respondente identifica o gerente — não repasse à área avaliada.</p>`, { full: true });
     }
 
-    return voltar + kpis + `<div class="grid2">${blocos.join('')}</div>` + lojas + '<div class="sf-gap"></div>' + blocoComentarios(ctx, area) + comoLer(acesso);
+    return voltar + avisoSimulacao(ctx) + kpis + `<div class="grid2">${blocos.join('')}</div>` + lojas + cardConferir(ctx, area) + '<div class="sf-gap"></div>' + blocoComentarios(ctx, area) + comoLer(acesso);
   }
 
   function tabelaMelhorar(idx, area) {
@@ -300,32 +452,58 @@
         <span class="sf-chip" style="background:${corNota(c.nota)}" title="Nota dada à área">${c.nota == null ? '—' : U.fmtInt(c.nota)}</span>
         ${c.melhorar.map(m => `<span class="sf-tag">${esc(m)}</span>`).join('')}
         ${c.operacao ? `<span class="sf-tag op">${esc(c.operacao)}</span>` : ''}
+        ${c.sinal ? `<span class="sf-selo at" title="${esc(M.SINAIS[c.sinal])}">Conferir</span>` : ''}
       </div><p>${esc(c.comentario)}</p></div>`).join('') + '</div>';
   }
 
   // ---- Gráficos ----------------------------------------------------------------
   const DL = '#16181D';
+  // serie: [{ ciclo, s (stats do ciclo), ac (stats somando os últimos ciclos) }]
   function linhaNotaNps(id, serie) {
+    const temAc = serie.some(x => x.ac);
+    // Eixo do NPS: de 0 a 100 quando não há NPS negativo na janela (aproveita melhor a altura).
+    const menor = Math.min(0, ...serie.map(x => x.s && x.s.nps != null ? x.s.nps : 0), ...serie.map(x => x.ac && x.ac.nps != null ? x.ac.nps : 0));
+    const yMin = Math.floor(menor / 25) * 25;
     HUB_CHART(id, {
       type: 'line',
       data: {
         labels: serie.map(x => M.rotuloMes(x.ciclo)),
         datasets: [
-          { label: 'Nota média', data: serie.map(x => x.s && x.s.media != null ? +x.s.media.toFixed(2) : null), borderColor: '#1C7CEC', backgroundColor: '#1C7CEC', tension: .3, pointRadius: 3, spanGaps: true, yAxisID: 'y' },
-          { label: 'NPS', data: serie.map(x => x.s && x.s.nps != null ? Math.round(x.s.nps) : null), borderColor: '#8A8F98', backgroundColor: '#8A8F98', borderDash: [5, 4], tension: .3, pointRadius: 2, spanGaps: true, yAxisID: 'y1' }
-        ]
+          { label: 'NPS', data: serie.map(x => x.s && x.s.nps != null ? Math.round(x.s.nps) : null), borderColor: '#1C7CEC', backgroundColor: '#1C7CEC', tension: .3, pointRadius: 3, spanGaps: true, yAxisID: 'y' }
+        ].concat(temAc ? [
+          { label: `NPS ${M.CICLOS_ACUMULADO} ciclos`, data: serie.map(x => x.ac && x.ac.nps != null ? Math.round(x.ac.nps) : null), borderColor: '#9CC4F5', backgroundColor: '#9CC4F5', borderWidth: 4, tension: .3, pointRadius: 0, spanGaps: true, yAxisID: 'y' }
+        ] : []).concat([
+          { label: 'Nota média', data: serie.map(x => x.s && x.s.media != null ? +x.s.media.toFixed(2) : null), borderColor: '#8A8F98', backgroundColor: '#8A8F98', borderDash: [5, 4], tension: .3, pointRadius: 2, spanGaps: true, yAxisID: 'y1' }
+        ])
       },
       options: {
         layout: { padding: { top: 18, left: 6, right: 6 } },
         plugins: {
           legend: { display: true, labels: { boxWidth: 12, font: { size: 11 } } },
-          tooltip: { callbacks: { label: c => c.datasetIndex === 0 ? `Nota ${M.fmtNota(c.raw)}` : `NPS ${M.fmtNps(c.raw)}` } },
-          datalabels: { display: c => c.datasetIndex === 0, color: DL, font: { size: 9, weight: '700' }, align: 'top', offset: 3, formatter: v => v == null ? '' : M.fmtNota(v) }
+          tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y1' ? `Nota ${M.fmtNota(c.raw)}` : `${c.dataset.label} ${M.fmtNps(c.raw)}` } },
+          datalabels: { display: c => c.datasetIndex === 0, color: DL, font: { size: 9, weight: '700' }, align: 'top', offset: 3, formatter: v => v == null ? '' : M.fmtNps(v) }
         },
         scales: {
-          y: { min: 0, max: 10, ticks: { stepSize: 2 } },
-          y1: { position: 'right', min: -100, max: 100, grid: { drawOnChartArea: false }, ticks: { stepSize: 50 } }
+          y: { min: yMin, max: 100, ticks: { stepSize: 25 } },
+          y1: { position: 'right', min: 0, max: 10, grid: { drawOnChartArea: false }, ticks: { stepSize: 2 } }
         }
+      }
+    });
+  }
+
+  // Linha simples em % (Compras: lojas sem reunião por ciclo).
+  function linhaPct(id, labels, values, cor) {
+    HUB_CHART(id, {
+      type: 'line',
+      data: { labels, datasets: [{ data: values, borderColor: cor, backgroundColor: cor, tension: .3, pointRadius: 3, spanGaps: true }] },
+      options: {
+        layout: { padding: { top: 18, left: 6, right: 12 } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => U.fmtPct(c.raw, 0) } },
+          datalabels: { color: DL, font: { size: 9, weight: '700' }, align: 'top', offset: 3, formatter: v => v == null ? '' : U.fmtPct(v, 0) }
+        },
+        scales: { y: { min: 0, max: 1, ticks: { stepSize: 0.25, callback: v => U.fmtPct(v, 0) } } }
       }
     });
   }
@@ -360,7 +538,7 @@
     const { idx } = ctx;
     const ciclos = janelaCiclos(idx);
     const todas = m => idx.areas.flatMap(a => (idx.porArea.get(a).get(m)) || []);
-    linhaNotaNps('c-sf-evo-geral', ciclos.map(m => ({ ciclo: m, s: M.stats(todas(m)) })));
+    linhaNotaNps('c-sf-evo-geral', ciclos.map(m => { const ac = M.acumuladoGeral(idx, m); return { ciclo: m, s: M.stats(todas(m)), ac: ac && ac.ciclos.length > 1 ? ac.s : null }; }));
     graficoMelhorar('c-sf-melh-geral', M.stats(todas(state.ciclo)));
   }
 
@@ -368,19 +546,25 @@
     const { idx } = ctx;
     const pa = idx.porArea.get(area);
     if (!pa || !pa.has(state.ciclo)) return;
-    linhaNotaNps('c-sf-evo', M.serieArea(idx, area, janelaCiclos(idx)));
+    linhaNotaNps('c-sf-evo', M.serieArea(idx, area, janelaCiclos(idx)).map(x => { const ac = x.s ? M.acumulado(idx, area, x.ciclo) : null; return { ciclo: x.ciclo, s: x.s, ac: ac && ac.ciclos.length > 1 ? ac.s : null }; }));
     const s = M.stats(pa.get(state.ciclo));
     barras('c-sf-dist', s.dist.map((_, i) => String(i)), s.dist, s.dist.map((_, i) => i >= 9 ? '#1baf7a' : i >= 7 ? '#eda100' : '#e34948'));
     graficoMelhorar('c-sf-melh', s);
     const ex = M.distribuicaoExtra(pa.get(state.ciclo));
-    if (ex.length) barras('c-sf-extra', ex.map(e => e[0]), ex.map(e => e[1]), ex.map(() => '#1C7CEC'));
+    if (ex.length) {
+      barras('c-sf-extra', ex.map(e => e[0]), ex.map(e => e[1]), ex.map(() => '#1C7CEC'));
+      const cs = janelaCiclos(idx).filter(m => M.semReuniao(pa.get(m)));
+      linhaPct('c-sf-reun', cs.map(m => M.rotuloMes(m)), cs.map(m => M.semReuniao(pa.get(m)).pct), '#e34948');
+    }
   }
 
   // ---- Montagem ----------------------------------------------------------------
   function renderConteudo(el) {
     const acesso = M.acessoDe(window.HUB_USER);
     const D = window.HUB_SATISFACAO_DATA;
-    const respostas = M.recortar(D.respostas || [], acesso);
+    const brutas = M.recortar(D.respostas || [], acesso);
+    // Simulação: mesma tela sem as avaliações sinalizadas para conferência.
+    const respostas = state.simular ? M.semSinalizadas(brutas) : brutas;
     const idx = M.indexar(respostas);
     if (!idx.ciclos.length) {
       el.innerHTML = empty(acesso.completo ? 'Nenhuma resposta da Pesquisa de Satisfação importada ainda.' : 'Ainda não há respostas para as áreas liberadas no seu acesso.',
@@ -390,7 +574,7 @@
     if (!state.ciclo || !idx.ciclos.includes(state.ciclo)) state.ciclo = idx.ciclos[idx.ciclos.length - 1];
     if (idx.areas.length === 1) state.area = idx.areas[0];
     else if (state.area && !idx.areas.includes(state.area)) state.area = '';
-    const ctx = { acesso, respostas, idx, ciclosTab: D.ciclos || [] };
+    const ctx = { acesso, respostas, brutas, idx, ciclosTab: D.ciclos || [] };
 
     el.innerHTML = STYLE + topo(ctx) + (state.area ? viewArea(ctx, state.area) : viewGeral(ctx));
 
@@ -401,6 +585,10 @@
     el.querySelectorAll('[data-area]').forEach(tr => tr.addEventListener('click', () => { state.area = tr.dataset.area; state.busca = ''; re(); el.scrollIntoView({ block: 'start' }); }));
     const voltar = el.querySelector('#sf-voltar');
     if (voltar) voltar.addEventListener('click', () => { state.area = ''; re(); });
+    const sim = el.querySelector('#sf-sim');
+    if (sim) sim.addEventListener('change', e => { state.simular = e.target.checked; re(); });
+    const simOff = el.querySelector('#sf-sim-off');
+    if (simOff) simOff.addEventListener('click', () => { state.simular = false; re(); });
 
     if (state.area) {
       desenharArea(ctx, state.area);

@@ -164,7 +164,8 @@
     const geral = stats(todas), geralAnt = ant ? stats(todasAnt) : null;
     const tab = new Map((ciclosTab || []).map(c => [mesISO(c.pesquisa), c]));
     const cAt = tab.get(ciclo) || null, cAnt = ant ? tab.get(ant) || null : null;
-    const ranking = areas.slice().sort((a, b) => b.atual.media - a.atual.media);
+    // O NPS é o indicador principal: o ranking segue ele (a nota desempata).
+    const ranking = areas.slice().sort((a, b) => b.atual.nps - a.atual.nps || b.atual.media - a.atual.media);
     return {
       ciclo, cicloAnterior: ant, areas: ranking, geral, geralAnterior: geralAnt,
       varNota: geralAnt && geral.media != null && geralAnt.media != null ? geral.media - geralAnt.media : null,
@@ -246,7 +247,7 @@
       .filter(r => mesISO(r.pesquisa) === ciclo && r.area === area && r.comentario)
       .filter(r => opts.todos || !comentarioVazio(r.comentario))
       .filter(r => !busca || N(r.comentario).includes(busca))
-      .map(r => ({ nota: r.nota == null ? null : Number(r.nota), melhorar: r.melhorar || [], comentario: r.comentario, operacao: r.unidade != null ? operacaoDe(r).nome : null }))
+      .map(r => ({ nota: r.nota == null ? null : Number(r.nota), melhorar: r.melhorar || [], comentario: r.comentario, operacao: r.unidade != null ? operacaoDe(r).nome : null, sinal: sinalDe(r) }))
       .sort((a, b) => opts.ordem === 'maior'
         ? (b.nota == null ? -1 : b.nota) - (a.nota == null ? -1 : a.nota)
         : (a.nota == null ? 99 : a.nota) - (b.nota == null ? 99 : b.nota));
@@ -260,10 +261,187 @@
     return Object.entries(c).sort((a, b) => ((ordem.indexOf(a[0]) + 1) || 99) - ((ordem.indexOf(b[0]) + 1) || 99));
   }
 
+  // ------------------------------------------------------------------
+  // NPS como indicador principal: leituras de apoio
+  // ------------------------------------------------------------------
+  const CICLOS_ACUMULADO = 3;
+
+  // Quanto UMA resposta move o NPS: detrator → neutro (ou neutro → promotor) = 100/n
+  // pontos; detrator → promotor = 200/n. Variação menor que isso é uma loja só.
+  function pesoResposta(n) { return n ? { umPasso: 100 / n, doisPassos: 200 / n } : null; }
+
+  // NPS acumulado: junta as respostas dos últimos k ciclos em que a área foi
+  // avaliada (até o ciclo escolhido). Com o triplo de respostas, oscila bem menos.
+  function acumulado(idx, area, ciclo, k) {
+    const pa = idx.porArea.get(area);
+    if (!pa) return null;
+    const ms = Array.from(pa.keys()).filter(m => m <= ciclo).sort().slice(-(k || CICLOS_ACUMULADO));
+    return ms.length ? { ciclos: ms, s: stats(ms.flatMap(m => pa.get(m))) } : null;
+  }
+  function acumuladoGeral(idx, ciclo, k) {
+    const ms = idx.ciclos.filter(m => m <= ciclo).slice(-(k || CICLOS_ACUMULADO));
+    if (!ms.length) return null;
+    const rows = [];
+    for (const a of idx.areas) { const pa = idx.porArea.get(a); for (const m of ms) if (pa.has(m)) rows.push(...pa.get(m)); }
+    return { ciclos: ms, s: stats(rows) };
+  }
+
+  // Tendência: três variações seguidas do NPS na mesma direção (4 ciclos avaliados).
+  // Recebe os NPS em ordem cronológica (null = ciclo sem avaliação, ignorado).
+  function tendencia(valores) {
+    const v = (valores || []).filter(x => x != null).map(x => Math.round(x)).slice(-4);
+    if (v.length < 4) return null;
+    const d = [v[1] - v[0], v[2] - v[1], v[3] - v[2]];
+    return d.every(x => x > 0) ? 'subindo' : d.every(x => x < 0) ? 'caindo' : null;
+  }
+  function tendenciaArea(idx, area, ciclo) {
+    const pa = idx.porArea.get(area);
+    if (!pa) return null;
+    return tendencia(Array.from(pa.keys()).filter(m => m <= ciclo).sort().map(m => stats(pa.get(m)).nps));
+  }
+  function tendenciaGeral(idx, ciclo) {
+    return tendencia(idx.ciclos.filter(m => m <= ciclo).map(m => stats(idx.areas.flatMap(a => idx.porArea.get(a).get(m) || [])).nps));
+  }
+
+  // ------------------------------------------------------------------
+  // Mesmas lojas: comparação só com quem respondeu nos dois ciclos (visão completa)
+  // ------------------------------------------------------------------
+  const chaveLoja = r => r.unidade == null && r.departamento == null ? null : N(r.unidade) + '\u0001' + N(r.departamento);
+
+  // area = null → todas as áreas. Devolve null sem loja (perfil sem a visão completa)
+  // ou sem nenhuma loja em comum.
+  function mesmasLojas(respostas, ciclo, cicloAnt, area) {
+    if (!cicloAnt) return null;
+    const at = new Set(), an = new Set(), rowsAt = [], rowsAn = [];
+    for (const r of respostas) {
+      if (area && r.area !== area) continue;
+      const m = mesISO(r.pesquisa);
+      if (m !== ciclo && m !== cicloAnt) continue;
+      const k = chaveLoja(r);
+      if (!k) continue;
+      if (m === ciclo) { at.add(k); rowsAt.push(r); } else { an.add(k); rowsAn.push(r); }
+    }
+    const ambos = new Set(Array.from(at).filter(k => an.has(k)));
+    if (!ambos.size) return null;
+    const a = stats(rowsAt.filter(r => ambos.has(chaveLoja(r)))), b = stats(rowsAn.filter(r => ambos.has(chaveLoja(r))));
+    return {
+      lojas: ambos.size, lojasAtual: at.size, lojasAnterior: an.size, entraram: at.size - ambos.size, sairam: an.size - ambos.size,
+      atual: a, anterior: b,
+      varNota: a.media != null && b.media != null ? a.media - b.media : null,
+      varNps: a.nps != null && b.nps != null ? a.nps - b.nps : null
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Respostas para conferir (a nota pode não medir o serviço)
+  // ------------------------------------------------------------------
+  const SINAIS = {
+    incoerente: 'Nota de 0 a 6 marcando só "Nada a melhorar"',
+    pouco_contato: 'Diz ter pouco ou nenhum contato com a área'
+  };
+  const POUCO_CONTATO_RE = /(pouco|nenhum|quase nao tenho|nao tenho|nao tenho (muito|tanto)|nao tive|sem) contato|nao utiliz|nao uso\b|nunca (utilizei|usei|precisei)|nao (tive|tivemos|houve) necessidade|nao precisei|desconhec/;
+  const notaDe = r => (r.nota == null || r.nota === '' || isNaN(Number(r.nota))) ? null : Number(r.nota);
+  function sinalDe(r) {
+    const v = notaDe(r);
+    const ops = r.melhorar || [];
+    // O comentário explica mais que a nota: 'não utilizo' vem antes da incoerência.
+    if (r.comentario && POUCO_CONTATO_RE.test(N(r.comentario))) return 'pouco_contato';
+    if (v != null && v <= 6 && ops.length && ops.every(o => N(o) === N(NADA))) return 'incoerente';
+    return null;
+  }
+  // Avaliações sinalizadas no ciclo, menor nota primeiro. Com loja só na visão completa.
+  function sinalizadas(respostas, ciclo, area) {
+    const out = [];
+    for (const r of respostas) {
+      if (mesISO(r.pesquisa) !== ciclo || (area && r.area !== area)) continue;
+      const sinal = sinalDe(r);
+      if (!sinal) continue;
+      out.push({
+        area: r.area, nota: notaDe(r), sinal, motivo: SINAIS[sinal], comentario: r.comentario || null,
+        loja: r.unidade != null || r.departamento != null ? (r.departamento || r.unidade) : null,
+        operacao: r.unidade != null ? operacaoDe(r).nome : null
+      });
+    }
+    return out.sort((a, b) => (a.nota == null ? 99 : a.nota) - (b.nota == null ? 99 : b.nota) || a.area.localeCompare(b.area, 'pt-BR'));
+  }
+  // Simulação: os mesmos dados sem as avaliações sinalizadas (em todos os ciclos, para a variação continuar comparável).
+  function semSinalizadas(respostas) { return respostas.filter(r => !sinalDe(r)); }
+
+  // ------------------------------------------------------------------
+  // Onde está a insatisfação: lojas que concentram as notas de 0 a 6 (visão completa)
+  // ------------------------------------------------------------------
+  const LIMITE_LOJA = 6.5;       // média da loja em todas as áreas abaixo disso = loja crítica
+  const CICLOS_RECORRENTE = 3;   // crítica em 3 ou mais ciclos da janela = recorrente
+  const SUSPEITAS_LOJA = 3;      // 3+ avaliações sinalizadas na mesma loja = conferir as notas com ela
+
+  // ciclosJanela: ciclos (em ordem) para o histórico de cada loja, terminando no ciclo escolhido.
+  function lojasInsatisfacao(respostas, ciclo, ciclosJanela) {
+    const janela = (ciclosJanela && ciclosJanela.length ? ciclosJanela : [ciclo]).slice();
+    const dentro = new Set(janela.concat([ciclo]));
+    const mapa = new Map();
+    for (const r of respostas) {
+      const m = mesISO(r.pesquisa);
+      if (!dentro.has(m)) continue;
+      const k = chaveLoja(r);
+      if (!k) continue;
+      if (!mapa.has(k)) mapa.set(k, { nome: r.departamento || r.unidade || '—', unidade: r.unidade, operacao: operacaoDe(r).nome, porCiclo: new Map() });
+      const l = mapa.get(k);
+      if (!l.porCiclo.has(m)) l.porCiclo.set(m, []);
+      l.porCiclo.get(m).push(r);
+    }
+    const mediaDe = rows => rows ? stats(rows).media : null;
+    const anterior = janela.filter(m => m < ciclo).pop() || null;
+    const lojas = [], ausentes = [];
+    for (const l of mapa.values()) {
+      const historico = janela.map(m => ({ ciclo: m, media: mediaDe(l.porCiclo.get(m)) }));
+      if (!l.porCiclo.has(ciclo)) {
+        // Loja crítica no ciclo anterior que não respondeu agora: o NPS pode subir só por isso.
+        const ant = anterior ? mediaDe(l.porCiclo.get(anterior)) : null;
+        if (ant != null && ant < LIMITE_LOJA) ausentes.push({ nome: l.nome, operacao: l.operacao, mediaAnterior: ant });
+        continue;
+      }
+      const rows = l.porCiclo.get(ciclo), s = stats(rows);
+      if (!s.n) continue;
+      const respondidos = historico.filter(x => x.media != null);
+      const ciclosBaixos = respondidos.filter(x => x.media < LIMITE_LOJA).length;
+      const suspeitas = rows.filter(r => sinalDe(r)).length;
+      lojas.push({
+        nome: l.nome, unidade: l.unidade, operacao: l.operacao, media: s.media, avaliacoes: s.n, detratores: s.detratores,
+        zeros: rows.filter(r => notaDe(r) === 0).length,
+        areasZero: ordenarAreas(rows.filter(r => notaDe(r) === 0).map(r => r.area)),
+        areasBaixas: ordenarAreas(rows.filter(r => notaDe(r) != null && notaDe(r) <= 6).map(r => r.area)),
+        historico, ciclosRespondidos: respondidos.length, ciclosBaixos,
+        recorrente: ciclosBaixos >= CICLOS_RECORRENTE, suspeitas, conferir: suspeitas >= SUSPEITAS_LOJA
+      });
+    }
+    const totalDet = lojas.reduce((t, l) => t + l.detratores, 0);
+    const criticas = lojas.filter(l => l.media < LIMITE_LOJA).sort((a, b) => a.media - b.media);
+    const detCriticas = criticas.reduce((t, l) => t + l.detratores, 0);
+    const outras = lojas.filter(l => l.media >= LIMITE_LOJA && l.detratores > 0);
+    return {
+      limite: LIMITE_LOJA, janela, lojas: lojas.length, totalDet, criticas, detCriticas,
+      pctCriticas: totalDet ? detCriticas / totalDet : null,
+      outras: { lojas: outras.length, detratores: outras.reduce((t, l) => t + l.detratores, 0) },
+      ausentes: ausentes.sort((a, b) => a.mediaAnterior - b.mediaAnterior), cicloAnterior: anterior
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Compras: lojas sem nenhuma reunião com o time no mês
+  // ------------------------------------------------------------------
+  function semReuniao(rows) {
+    const c = (rows || []).filter(r => r.extra);
+    if (!c.length) return null;
+    const zero = c.filter(r => /^0\b/.test(N(r.extra))).length;
+    return { n: c.length, zero, pct: zero / c.length };
+  }
+
   window.HUB_METRICS_SATISFACAO = {
     PERM, PERM_COMPLETO, FAIXAS, ZONAS_NPS, MELHORAR, NADA, ORDEM_AREAS,
     acessoDe, recortar, stats, indexar, resumoArea, serieArea, visaoGeral, mapaCalor,
     porOperacao, matrizOperacoes, porLoja, comentarios, comentarioVazio, distribuicaoExtra, ordenarAreas,
+    CICLOS_ACUMULADO, LIMITE_LOJA, SINAIS, pesoResposta, acumulado, acumuladoGeral, tendencia, tendenciaArea, tendenciaGeral,
+    mesmasLojas, sinalDe, sinalizadas, semSinalizadas, lojasInsatisfacao, semReuniao,
     faixa, zonaNps, fmtNota, fmtNps, fmtVarNota, fmtVarNps, rotuloMes, rotuloMesLongo, mesReferencia, rotuloCiclo, rotuloCicloLongo, mesISO
   };
 })();

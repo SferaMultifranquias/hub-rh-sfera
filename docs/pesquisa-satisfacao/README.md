@@ -1,6 +1,6 @@
 # Pesquisa de Satisfação com o Suporte do Escritório — módulo do Hub
 
-Última atualização: 07/10/2026.
+Última atualização: 13/10/2026.
 
 ## O que é
 
@@ -93,12 +93,32 @@ O card **16. Pesquisa de Satisfação** do Upload grava as duas coisas: o agrega
   - crítico: abaixo de 7.
 
   As faixas ficam em `FAIXAS`, em `metrics-satisfacao.js`.
-- **NPS:** % de notas 9–10 menos % de notas 0–6. Zonas:
+- **NPS (indicador principal desde 13/10/2026):** % de notas 9–10 menos % de notas 0–6. É o primeiro cartão da tela e a ordem do ranking. Zonas:
   - excelência: 75 ou mais;
   - qualidade: de 50 a 74;
   - aperfeiçoamento: de 0 a 49;
   - crítica: abaixo de 0.
-- **Variação:** contra a pesquisa anterior em que a área foi avaliada.
+- **Variação:** contra a pesquisa anterior em que a área foi avaliada. Na tela, a variação do NPS sai dos valores já arredondados (+43 → +44 = ▲ 1).
+
+### NPS como indicador principal (13/10/2026)
+
+Veio do estudo do DHO do ciclo out/26 ("NPS como estrela norte"). Tudo calculado com os dados que o Hub já guardava; nenhum SQL novo.
+
+- **Promotores · neutros · detratores:** barra por área no ranking (9–10, 7–8, 0–6).
+- **NPS de 3 ciclos** (`acumulado`, `acumuladoGeral`; constante `CICLOS_ACUMULADO`): o mesmo cálculo somando as respostas dos últimos 3 ciclos em que a área foi avaliada. Com ~40 respostas por mês, o NPS de uma área tem margem de erro de cerca de ±25 pontos; somando 3 ciclos, cai para cerca de ±15.
+- **Peso de uma resposta** (`pesoResposta`): 100 ÷ respostas = pontos de NPS quando uma loja deixa de ser detratora (o dobro se virar promotora). Com 38 respostas, 2,6 e 5,3 pontos.
+- **Tendência** (`tendencia`): o selo "subindo/caindo há 3 ciclos" só aparece com três variações seguidas do NPS na mesma direção (4 ciclos avaliados).
+- **Mesmas lojas** (`mesmasLojas`, só na visão completa): variação calculada só com as lojas/áreas (unidade + departamento) que responderam nos dois ciclos. Quando o número de respondentes muda mais de 20%, a tela avisa no topo. Em out/26: respondentes de 53 para 38; "Compras O Boticário" caiu 13 pontos no total, mas subiu 4 nas mesmas lojas.
+- **Onde está a insatisfação** (`lojasInsatisfacao`, só na visão completa): lojas/áreas com média abaixo de 6,5 somando todas as áreas (`LIMITE_LOJA`), quanto das notas de 0 a 6 elas concentram, zeros, e a média de cada uma nos últimos 6 ciclos. "Recorrente" = abaixo de 6,5 em 3 ou mais ciclos da janela. A tela também lista as lojas críticas do ciclo anterior que não responderam agora — quando uma loja insatisfeita para de responder, o NPS sobe sem nada ter melhorado.
+- **Respostas para conferir** (`sinalDe`, `sinalizadas`): avaliações em que a nota pode não medir o serviço.
+  - comentário de quem diz ter pouco ou nenhum contato com a área ("não utilizo", "pouco contato", "não tivemos necessidade"...);
+  - nota de 0 a 6 que marcou só "Nada a melhorar".
+
+  O comentário vem antes da nota: "não utilizo" com nota 0 é pouco contato, não incoerência. Loja com 3 ou mais avaliações sinalizadas ganha o selo "Conferir com a loja". A caixa **"Simular os indicadores sem essas avaliações"** (`semSinalizadas`) recalcula a tela inteira sem elas, em todos os ciclos; nada é apagado e o padrão é sempre o número oficial.
+- **Compras:** segue dividido em "Compras O Boticário" e "Compras Hering e Levis", pela marca de quem respondeu (decisão do RH em 13/10/2026). O cartão **"Lojas sem reunião no mês"** (`semReuniao`) mostra o % que respondeu "0 reuniões", com a evolução por ciclo.
+- **Base da adesão:** gestores ativos com a tag pesquisa.satisfação (decisão do RH em 13/10/2026), e não as 68 lojas da planilha Gestão de Loja usadas no estudo.
+
+**Atenção:** o "NPS de 3 ciclos" **por área** que inclui ago/26 fica errado enquanto a planilha 16 não for corrigida (colunas trocadas nesse ciclo). O NPS geral do Escritório não é afetado, porque a troca foi entre áreas da mesma resposta.
 - **Participação:** respondentes da pesquisa ÷ gestores aptos, limitada a 100%. Os aptos são calculados no upload, com as tags do cadastro atual.
 - **Participação de todas as lojas e áreas** (quem respondeu, parcial ou não respondeu): card no fim da visão geral, **confidencial, só para o Administrador** (permissão `indicadores.satisfacao_participacao`, fora de todos os presets). Veio do boletim do Escritório em 07/10/2026. As contas são as do motor do Boletim (`calcularMes` do mês da pesquisa): respondentes por loja da planilha 16 e aptos = ativos com a tag pesquisa.satisfação hoje. Os dados por loja são buscados com o Boletim (`HUB_BOLETIM.carregar`), então quem tiver essa permissão também precisa de `indicadores.boletim` (o Administrador tem tudo).
 - **"O que melhorar?":** % das avaliações em que o ponto foi marcado. O "principal ponto" ignora "Nada a melhorar".
@@ -133,4 +153,6 @@ Escritório: nota geral 8,3 e NPS +43, com 53 respondentes.
 - [ ] Liberar no Cadastro de Acessos cada responsável de área, com as áreas dele.
 - [ ] Definir se o Boletim do mês M deve usar a pesquisa aplicada em M+1, já que a pesquisa avalia o mês anterior. Hoje ele usa a pesquisa aplicada no próprio mês M.
 - [ ] Opção "Não utilizo" no formulário, para tirar os zeros de quem não usa a área.
-- [ ] Ideias: plano de ação por área (resposta da área aos comentários), meta de nota por área e exportar o relatório da área em PDF.
+- [x] Faixas de nota: ficam as do módulo (9 / 8 / 7), decisão do RH em 13/10/2026.
+- [ ] Comentários: triagem por exceção (decisão do RH em 13/10/2026) — o responsável da área continua vendo todos, sem loja; o DHO oculta ou marca só os casos delicados e pode liberar a loja quando ajudar a resolver. Pede SQL.
+- [ ] Próximo bloco (pede SQL e ajuste no upload): painel de adesão por supervisão e por dia, metas de NPS por área, triagem dos comentários pelo DHO, dossiê da área para a devolutiva, planos de ação e relatório do ciclo automático.
