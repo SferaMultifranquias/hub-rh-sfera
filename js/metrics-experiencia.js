@@ -96,6 +96,25 @@
     return null;
   }
 
+  // Extra Natal: anos das tags "extra.natal.AAAA" (ou "natal.extra.AAAA") nos
+  // Grupos do Headcount. A experiência deles segue o calendário próprio do DP
+  // (aba Extra Natal), por isso ficam fora dos ciclos normais de 45/90 dias.
+  function anosNatal(grupos) {
+    const out = [];
+    const re = /(?:extra[.\s_-]*natal|natal[.\s_-]*extra)[.\s_-]*(\d{4})/g;
+    const txt = String(grupos || '').toLowerCase();
+    let m;
+    while ((m = re.exec(txt))) { const a = Number(m[1]); if (!out.includes(a)) out.push(a); }
+    return out;
+  }
+  // A linha da AVE é de Extra Natal quando a admissão cai na temporada de um
+  // ano com tag (quem voltou depois como efetivo segue o ciclo normal).
+  function ehExtraNatal(r, info) {
+    const adm = r.data_admissao ? String(r.data_admissao).slice(0, 10) : null;
+    if (!info || !adm) return false;
+    return anosNatal(info.grupos).some(a => adm >= a + '-08-01' && adm <= (a + 1) + '-02-28');
+  }
+
   function situacaoDe(r, mapa) {
     if (r.cpf != null && String(r.cpf).trim()) {
       const s = mapa.get('c:' + String(r.cpf).trim());
@@ -170,6 +189,7 @@
         depto: r.departamento || 'Não informado',
         situacao: info ? info.sit : null,
         dispensa: tipoDispensa(r, info),
+        extraNatal: ehExtraNatal(r, info),
         dataSaida: saida
       };
     }
@@ -183,6 +203,7 @@
         if (!r._d.dataFiltro || !U.inRange(r._d.dataFiltro, f.start, f.end)) return false;
       }
       if (f.semDispensa && r._d.dispensa) return false;
+      if (f.semNatal && r._d.extraNatal) return false;
       if (!U.matchesAny(r.unidade, f.unidade)) return false;
       if (!U.matchesAny(r.departamento, f.departamento)) return false;
       if (f.gestor && !(U.normIncludes(r._d.gestorRotulo, f.gestor) || U.normIncludes(r.gestor, f.gestor) || U.normIncludes(r.gestor_direto, f.gestor))) return false;
@@ -514,6 +535,7 @@
   }
 
   window.HUB_EXP_METRICS = {
+    anosNatal,
     CORE, NEGOCIO, PESO_GESTOR, PESO_AUTO, CONCEITOS, MARTELO, MARTELO_CURTO, CORES_CONCEITO, CORES_MARTELO,
     SITUACOES, CORES_SITUACAO,
     conceitoDaMedia, marcaDe, preparar, filtrar, calcular, comparar, agrupar, resumoGrupo
