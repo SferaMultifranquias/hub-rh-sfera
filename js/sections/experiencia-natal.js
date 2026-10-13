@@ -193,9 +193,9 @@
     const desligSem = deslig.filter(r => !FEITAS.includes(r.e1.sit) && !FEITAS.includes(r.e2.sit)).length;
     const prox7 = rows.filter(FILTROS.proximas[1]).length;
 
-    const seletor = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
-      <label style="font-size:12px;color:var(--text2);font-weight:700">Ano do Extra Natal</label>
-      <select id="natal-ano" style="width:auto">${anos.map(a => `<option value="${a}" ${a === ano ? 'selected' : ''}>${a}${CALENDARIOS[a] ? '' : ' (histórico)'}</option>`).join('')}</select>
+    const seletor = `<div class="toolbar">
+      <span style="font-size:12px;color:var(--text2);font-weight:700">Ano do Extra Natal</span>
+      <select id="natal-ano">${anos.map(a => `<option value="${a}" ${a === ano ? 'selected' : ''}>${a}${CALENDARIOS[a] ? '' : ' (histórico)'}</option>`).join('')}</select>
       <span style="font-size:11.5px;color:var(--muted)">Colaboradores com a tag <b>extra.natal.${ano}</b> no Headcount. O filtro de datas da barra superior não se aplica aqui.</span>
     </div>`;
 
@@ -232,7 +232,7 @@
     const tabCal = cal ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Admissão</th><th>Liberar 1ª avaliação</th><th>Término da 1ª experiência</th><th>Liberar 2ª avaliação</th><th>Término da prorrogação</th></tr></thead><tbody>${cal.faixas.map((x, i) => {
       const de = i === 0 ? cal.inicio : U.addDays(cal.faixas[i - 1][0], 1);
       return `<tr><td>${i === 0 ? 'até' : U.fmtDateBR(de) + ' a'} ${U.fmtDateBR(x[0])}</td><td>${U.fmtDateBR(U.addDays(x[1], -ANTECEDENCIA))}</td><td>${U.fmtDateBR(x[1])}</td><td>${U.fmtDateBR(U.addDays(x[2], -ANTECEDENCIA))}</td><td>${U.fmtDateBR(x[2])}</td></tr>`;
-    }).join('')}</tbody></table></div><p class="sub" style="margin-top:8px">Calendário do DP (calendario_extranatal_${ano}.xlsx). A avaliação é liberada ${ANTECEDENCIA} dias antes do término de cada período. Admissões antes de ${U.fmtDateBR(cal.inicio)} seguem a primeira faixa.</p>` : '';
+    }).join('')}</tbody></table></div><p style="font-size:11.5px;color:var(--muted);margin-top:8px">Calendário do DP (calendario_extranatal_${ano}.xlsx). A avaliação é liberada ${ANTECEDENCIA} dias antes do término de cada período. Admissões antes de ${U.fmtDateBR(cal.inicio)} seguem a primeira faixa.</p>` : '';
 
     body.innerHTML = `
       ${seletor}${aviso}${kpis}
@@ -240,10 +240,10 @@
         ${card('Extra Natal por unidade', '&#128205;', tabUn)}
         ${cal ? card(`Calendário de experiência — Extra Natal ${ano}`, '&#128197;', tabCal) : ''}
       </div>
-      <div class="card" style="margin-top:16px">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-          <input type="text" id="natal-busca" placeholder="Buscar colaborador, cargo, unidade ou gestor..." value="${esc(estado.busca)}" style="flex:1;min-width:220px">
-          <select id="natal-filtro" style="width:auto">${Object.keys(FILTROS).map(k => `<option value="${k}" ${estado.filtro === k ? 'selected' : ''}>${FILTROS[k][0]}</option>`).join('')}</select>
+      <div style="margin-top:16px">
+        <div class="toolbar">
+          <input type="text" id="natal-busca" placeholder="Buscar colaborador, cargo, unidade ou gestor..." value="${esc(estado.busca)}">
+          <select id="natal-filtro">${Object.keys(FILTROS).map(k => `<option value="${k}" ${estado.filtro === k ? 'selected' : ''}>${FILTROS[k][0]}</option>`).join('')}</select>
           <button type="button" class="btn btn-outline btn-sm" id="natal-csv" style="width:auto">Exportar CSV</button>
         </div>
         <div id="natal-tabela"></div>
@@ -256,8 +256,8 @@
         .sort((x, y) => String(x.e1.lib || x.adm || '9').localeCompare(String(y.e1.lib || y.adm || '9')) || String(x.adm || '').localeCompare(String(y.adm || '')) || x.nome.localeCompare(y.nome, 'pt-BR'));
       const alvo = body.querySelector('#natal-tabela');
       if (!visiveis.length) { alvo.innerHTML = empty('Nenhum colaborador encontrado com esses filtros.'); return; }
-      alvo.innerHTML = `<p class="sub" style="margin-bottom:8px">${U.fmtInt(visiveis.length)} de ${U.fmtInt(rows.length)} colaboradores · ordenados pela data de liberação da 1ª avaliação</p>
-        <div class="table-wrap"><table class="dt"><thead><tr><th>Colaborador</th><th>Unidade / gestor</th><th>Admissão</th><th title="Respostas da planilha AVE 45 DIAS">1º período</th><th title="Respostas da planilha AVE 90 DIAS">2º período (prorrogação)</th></tr></thead><tbody>${visiveis.map(r => `<tr>
+      alvo.innerHTML = `<p style="font-size:11.5px;color:var(--muted);margin-bottom:8px">${U.fmtInt(visiveis.length)} de ${U.fmtInt(rows.length)} colaboradores · ordenados pela data de liberação da 1ª avaliação</p>
+        <div class="table-wrap" style="max-height:none"><table class="dt"><thead><tr><th>Colaborador</th><th>Unidade / gestor</th><th>Admissão</th><th title="Respostas da planilha AVE 45 DIAS">1º período</th><th title="Respostas da planilha AVE 90 DIAS">2º período (prorrogação)</th></tr></thead><tbody>${visiveis.map(r => `<tr>
           <td><b>${esc(r.nome)}</b> ${r.situacao && M.SITUACOES[r.situacao] ? `<span class="ave-pill" style="--c:${M.CORES_SITUACAO[r.situacao]}">${M.SITUACOES[r.situacao]}</span>` : ''}<div style="color:var(--muted);font-size:10.5px">${esc(r.cargo)}</div></td>
           <td>${esc(r.unidade)}<div style="color:var(--muted);font-size:10.5px">${esc(r.gestor)}</div></td>
           <td>${r.adm ? U.fmtDateBR(r.adm) : '—'}${r.saida ? `<div style="color:var(--muted);font-size:10.5px">saída ${U.fmtDateBR(r.saida)}</div>` : ''}${r.evitar ? '<div><span class="ave-pill" style="--c:#eb6834" title="A planilha do DP marca esta data de admissão como EVITAR (experiência curta)">Data a evitar</span></div>' : ''}${r.antesDoInicio ? '<div style="color:var(--muted);font-size:10.5px" title="Admissão anterior ao início do calendário: segue a primeira faixa">segue 1ª faixa</div>' : ''}</td>
