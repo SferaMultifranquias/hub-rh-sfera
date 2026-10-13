@@ -13,6 +13,7 @@
   const { kpi, empty, card, insightsCard, insightsList, barChart, doughnutChart } = HUB_UI;
 
   let ciclo = 45;               // 45 | 90 | 'evolucao'
+  let desconsiderarDispensa = true; // aprendiz/estagiário fora da contagem (avaliação não obrigatória)
   let aba = 'indicadores';      // 'indicadores' | 'lista'
   const lista = { busca: '', conceito: 'todos', status: 'todos', situacaoColab: 'todos', ordem: 'recentes', pagina: 1 };
   const PAGE_SIZE = 25;
@@ -32,6 +33,9 @@
   function pillMartelo(v) {
     if (!(v >= 1 && v <= 4)) return '<span class="ave-pill" style="--c:#8A8F98">Sem decisão</span>';
     return `<span class="ave-pill" style="--c:${M.CORES_MARTELO[v]}">${esc(M.MARTELO_CURTO[v])}</span>`;
+  }
+  function pillDispensa(r) {
+    return r._d.dispensa ? `<span class="ave-pill" style="--c:#8A6FD6" title="Contrato fixo e predeterminado — avaliação de experiência não obrigatória">${esc(r._d.dispensa)} · não obrigatória</span>` : '';
   }
   function pillSituacao(s) {
     if (!s || !M.SITUACOES[s]) return '<span class="ave-pill" style="--c:#C9D0DA" title="Não encontrado no cadastro de Colaboradores (Headcount)">Não encontrado</span>';
@@ -79,6 +83,7 @@
   // Entrada
   // ==================================================================
   function renderExperiencia(el, f) {
+    f = Object.assign({}, f, { semDispensa: desconsiderarDispensa });
     const assinatura = JSON.stringify(f);
     if (assinatura !== ultimoFiltro) { lista.pagina = 1; ultimoFiltro = assinatura; }
     const meu = ++tokenRender;
@@ -96,7 +101,15 @@
           <button type="button" class="tab-btn ${aba === 'lista' ? 'active' : ''}" data-ave-aba="lista">Lista de Colaboradores</button>
         </div>`}
       </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin:0 0 12px;cursor:pointer" title="Jovens aprendizes e estagiários têm contrato fixo e predeterminado: a avaliação de experiência (até 90 dias) não é obrigatória para eles">
+        <input type="checkbox" id="ave-dispensa" style="width:auto" ${desconsiderarDispensa ? 'checked' : ''}> Desconsiderar jovens aprendizes e estagiários (avaliação não obrigatória)
+      </label>
       <div id="ave-body"><div class="empty"><p>Carregando avaliações...</p></div></div>`;
+    el.querySelector('#ave-dispensa').addEventListener('change', e => {
+      desconsiderarDispensa = e.target.checked;
+      lista.pagina = 1;
+      renderExperiencia(el, f);
+    });
     el.querySelectorAll('[data-ciclo]').forEach(b => b.addEventListener('click', () => {
       ciclo = b.dataset.ciclo === 'evolucao' ? 'evolucao' : Number(b.dataset.ciclo);
       lista.pagina = 1;
@@ -450,7 +463,7 @@
       <div class="table-wrap" style="max-height:none"><table class="dt">
         <thead><tr><th>Colaborador</th><th>Unidade / gestor</th><th>Admissão</th><th title="Prazo de resposta = dia ${ciclo - 5} da admissão (gestor e colaborador); o período de experiência termina no dia ${ciclo}">Prazo p/ responder</th><th>Avaliado em</th><th title="Média das 7 competências comuns — avaliação do gestor">Nota gestor</th><th title="Média das 7 competências comuns — autoavaliação">Nota auto</th><th title="Nota do gestor × 85% + nota do colaborador × 15% (médias das 7 competências comuns). * = sem autoavaliação, vale só o gestor">Nota final</th><th>Batendo o Martelo</th><th>Comentário do gestor</th><th title="Avaliação do gestor · autoavaliação">Status</th><th></th></tr></thead>
         <tbody>${pagina.map((r, i) => `<tr>
-          <td><b>${esc(r.nome)}</b> ${pillSituacao(r._d.situacao)}<div style="font-size:10.5px;color:var(--muted)">${esc(r.cargo || 'Cargo não informado')}</div></td>
+          <td><b>${esc(r.nome)}</b> ${pillSituacao(r._d.situacao)} ${pillDispensa(r)}<div style="font-size:10.5px;color:var(--muted)">${esc(r.cargo || 'Cargo não informado')}</div></td>
           <td>${esc(r.unidade || '—')}<div style="font-size:10.5px;color:var(--muted)">${esc(r._d.gestorRotulo)}</div></td>
           <td>${U.fmtDateBR(r.data_admissao) || '—'}</td>
           <td>${r._d.prazoResp ? U.fmtDateBR(r._d.prazoResp) : '—'}<div style="margin-top:2px" title="Gestor">${prazoPill(r._d.prazoSit, r._d.prazoDias, r._d.fimPeriodo, r._d.dataSaida)}</div><div style="margin-top:2px;font-size:9.5px;color:var(--muted)" title="Colaborador (autoavaliação)">colab.: ${prazoPill(r._d.autoSit, r._d.autoDias, r._d.fimPeriodo, r._d.dataSaida)}</div></td>
@@ -550,7 +563,7 @@
       </div>
       <div class="table-wrap" style="max-height:none"><table class="dt" style="white-space:normal"><thead><tr><th>Competência</th><th>Gestor</th><th>Autoavaliação</th><th title="85% gestor + 15% colaborador">Nota final</th></tr></thead><tbody>${linhas}</tbody></table></div>
       <p class="sub" id="ave-com-status" style="margin-top:10px;font-size:11.5px;color:var(--muted)">Carregando comentários...</p>`;
-    const modal = abrirModal(`${esc(r.nome)} ${pillSituacao(r._d.situacao)}`, `${esc(r.cargo || 'Cargo não informado')} · ${esc(r.unidade || '')}${r.departamento ? ' · ' + esc(r.departamento) : ''} · Avaliação de ${ciclo} dias`, corpo);
+    const modal = abrirModal(`${esc(r.nome)} ${pillSituacao(r._d.situacao)} ${pillDispensa(r)}`, `${esc(r.cargo || 'Cargo não informado')} · ${esc(r.unidade || '')}${r.departamento ? ' · ' + esc(r.departamento) : ''} · Avaliação de ${ciclo} dias`, corpo);
 
     // Comentários por competência: buscados só agora, um colaborador por vez.
     HUB_EXPERIENCIA.buscarComentarios(ciclo, r.id).then(cm => {

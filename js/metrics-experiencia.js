@@ -77,13 +77,23 @@
     for (const c of rows) {
       const sit = norm(c.situacao);
       if (!sit) continue;
-      const info = { sit, saida: c.ultimo_dia_trabalhado ? String(c.ultimo_dia_trabalhado).slice(0, 10) : null };
+      const info = { sit, grupos: c.grupos, cargo: c.cargo, saida: c.ultimo_dia_trabalhado ? String(c.ultimo_dia_trabalhado).slice(0, 10) : null };
       if (c.cpf != null && String(c.cpf).trim()) map.set('c:' + String(c.cpf).trim(), info);
       const n = norm(c.nome_completo || c.nome);
       if (n) porNome.set(n, porNome.has(n) ? null : info);
     }
     for (const [n, info] of porNome) if (info) map.set('n:' + n, info);
     return map;
+  }
+
+  // Jovem aprendiz e estagiário têm contrato fixo e predeterminado: a avaliação
+  // de experiência (45/90 dias) não é obrigatória para eles. Identificados pela
+  // tag de grupo "cota.aprendiz" do Headcount ou pelo texto do cargo.
+  function tipoDispensa(r, info) {
+    const txt = norm([r.cargo, info && info.cargo, info && info.grupos].filter(Boolean).join(' '));
+    if (/estagi/.test(txt)) return 'Estagiário';
+    if (/aprendiz/.test(txt)) return 'Jovem aprendiz';
+    return null;
   }
 
   function situacaoDe(r, mapa) {
@@ -159,6 +169,7 @@
         cargo: r.cargo || 'Não informado',
         depto: r.departamento || 'Não informado',
         situacao: info ? info.sit : null,
+        dispensa: tipoDispensa(r, info),
         dataSaida: saida
       };
     }
@@ -171,6 +182,7 @@
       if (f.start || f.end) {
         if (!r._d.dataFiltro || !U.inRange(r._d.dataFiltro, f.start, f.end)) return false;
       }
+      if (f.semDispensa && r._d.dispensa) return false;
       if (!U.matchesAny(r.unidade, f.unidade)) return false;
       if (!U.matchesAny(r.departamento, f.departamento)) return false;
       if (f.gestor && !(U.normIncludes(r._d.gestorRotulo, f.gestor) || U.normIncludes(r.gestor, f.gestor) || U.normIncludes(r.gestor_direto, f.gestor))) return false;
