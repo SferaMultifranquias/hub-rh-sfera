@@ -295,6 +295,7 @@
         ${kpi('Cota Jovem Aprendiz', U.fmtInt(d.cotaAprendiz), '', '#eda100')}
         ${kpi('Afastamentos INSS', U.fmtInt(d.afastamentoInss), '', 'var(--critical)')}
         ${kpi('Licença Maternidade', U.fmtInt(d.afastamentoMaternidade), '', '#805AD5')}
+        ${kpi('Férias', U.fmtInt(d.ferias), 'desativados sem afastamento (INSS ou maternidade)', '#0e9aa7')}
         ${kpi('Tempo médio de casa', U.tenureLabel(Math.round(d.tempoMedioMeses)), '', '#4a3aa7')}
       </div>
       <div class="grid2">

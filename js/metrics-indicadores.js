@@ -154,6 +154,9 @@
       cotaAprendiz: rows.filter(r => temGrupo(r, 'cota.aprendiz')).length,
       afastamentoInss: rows.filter(r => temGrupo(r, 'afastamento.inss')).length,
       afastamentoMaternidade: rows.filter(r => temGrupo(r, 'afastamento.maternidade')).length,
+      // Férias: a Feedz não tem marca própria — é quem está desativado e não
+      // tem tag de afastamento (INSS ou maternidade).
+      ferias: desativados.filter(r => !temGrupo(r, 'afastamento.inss') && !temGrupo(r, 'afastamento.maternidade')).length,
       porUnidade: countBy(rows, 'unidade'),
       porDepartamento: countBy(rows, 'departamento'),
       porGestor: countBy(rows, 'gestor_direto'),
