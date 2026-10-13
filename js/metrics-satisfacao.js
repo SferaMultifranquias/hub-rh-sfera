@@ -3,7 +3,8 @@
 // ser testado em Node (test/satisfacao.test.js).
 //
 // Entrada: linhas de satisfacao_dados() — { pesquisa, area, nota, melhorar[],
-// extra, comentario, unidade, departamento } — e os ciclos (satisfacao_ciclo).
+// extra, comentario, unidade, departamento, chave, triagem, loja_liberada } — e
+// os ciclos (satisfacao_ciclo).
 //
 // SIGILO: o banco já devolve só as áreas liberadas no perfil, sem loja para quem
 // não tem a visão completa. recortar() repete a mesma regra no navegador para o
@@ -73,11 +74,30 @@
     return { modulo, completo, areas: completo ? null : ((user && user.satisfacao_areas) || []).slice() };
   }
 
+  // Triagem dos comentários (exceções marcadas por quem tem a visão completa).
+  // Sem marca, o comentário vai para a área sem a loja.
+  const TRIAGEM = {
+    ocultar: { rotulo: 'Oculto da área', acao: 'Ocultar da área', escondeDaArea: true },
+    individual: { rotulo: 'Tratar individualmente', acao: 'Tratar individualmente (não vai para a área)', escondeDaArea: true },
+    loja: { rotulo: 'Loja liberada para a área', acao: 'Liberar a loja para a área', escondeDaArea: false }
+  };
+  const triagemDe = r => (r && r.triagem && TRIAGEM[r.triagem]) ? r.triagem : null;
+
+  // Sem a visão completa: só as áreas liberadas, sem loja; comentário marcado como
+  // "ocultar" ou "individual" some (a nota fica), e o marcado como "loja" leva o
+  // nome da loja em loja_liberada. Mesma regra de satisfacao_dados() no banco.
   function recortar(respostas, acesso) {
     if (!acesso || !acesso.modulo) return [];
     if (acesso.completo) return respostas;
     const ok = new Set(acesso.areas.map(N));
-    return respostas.filter(r => ok.has(N(r.area))).map(r => Object.assign({}, r, { unidade: null, departamento: null }));
+    return respostas.filter(r => ok.has(N(r.area))).map(r => {
+      const t = triagemDe(r);
+      return Object.assign({}, r, {
+        unidade: null, departamento: null, chave: null, triagem: null,
+        comentario: t && TRIAGEM[t].escondeDaArea ? null : r.comentario,
+        loja_liberada: r.loja_liberada || (t === 'loja' ? (r.departamento || r.unidade || null) : null)
+      });
+    });
   }
 
   // ------------------------------------------------------------------
@@ -247,7 +267,16 @@
       .filter(r => mesISO(r.pesquisa) === ciclo && r.area === area && r.comentario)
       .filter(r => opts.todos || !comentarioVazio(r.comentario))
       .filter(r => !busca || N(r.comentario).includes(busca))
-      .map(r => ({ nota: r.nota == null ? null : Number(r.nota), melhorar: r.melhorar || [], comentario: r.comentario, operacao: r.unidade != null ? operacaoDe(r).nome : null, sinal: sinalDe(r) }))
+      .filter(r => !opts.soTriados || triagemDe(r))
+      .map(r => ({
+        nota: r.nota == null ? null : Number(r.nota), melhorar: r.melhorar || [], comentario: r.comentario,
+        operacao: r.unidade != null ? operacaoDe(r).nome : null, sinal: sinalDe(r),
+        // Visão completa: a loja de quem escreveu, a chave e a marca da triagem.
+        // Responsável da área: a loja só quando o DHO liberou.
+        loja: r.unidade != null || r.departamento != null ? (r.departamento || r.unidade) : (r.loja_liberada || null),
+        lojaLiberada: r.unidade == null && r.departamento == null && !!r.loja_liberada,
+        chave: r.chave || null, triagem: triagemDe(r)
+      }))
       .sort((a, b) => opts.ordem === 'maior'
         ? (b.nota == null ? -1 : b.nota) - (a.nota == null ? -1 : a.nota)
         : (a.nota == null ? 99 : a.nota) - (b.nota == null ? 99 : b.nota));
@@ -437,7 +466,7 @@
   }
 
   window.HUB_METRICS_SATISFACAO = {
-    PERM, PERM_COMPLETO, FAIXAS, ZONAS_NPS, MELHORAR, NADA, ORDEM_AREAS,
+    PERM, PERM_COMPLETO, FAIXAS, ZONAS_NPS, MELHORAR, NADA, ORDEM_AREAS, TRIAGEM, triagemDe,
     acessoDe, recortar, stats, indexar, resumoArea, serieArea, visaoGeral, mapaCalor,
     porOperacao, matrizOperacoes, porLoja, comentarios, comentarioVazio, distribuicaoExtra, ordenarAreas,
     CICLOS_ACUMULADO, LIMITE_LOJA, SINAIS, pesoResposta, acumulado, acumuladoGeral, tendencia, tendenciaArea, tendenciaGeral,

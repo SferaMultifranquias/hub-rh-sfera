@@ -289,5 +289,36 @@ run('Compras: lojas sem reunião', () => {
   check('área sem a pergunta devolve null', M.semReuniao([{ nota: 8, extra: null }]) === null);
 });
 
+run('Triagem dos comentários', () => {
+  const linhas = [
+    av('2026-10', 'A', 'TI', 9, { comentario: 'Atendimento rápido', chave: 'k1', triagem: null }),
+    av('2026-10', 'B', 'TI', 2, { comentario: 'Fulano foi grosseiro no chamado', chave: 'k2', triagem: 'individual' }),
+    av('2026-10', 'C', 'TI', 0, { comentario: 'nao utilizo', chave: 'k3', triagem: 'ocultar' }),
+    av('2026-10', 'D', 'TI', 4, { comentario: 'Computador parado há um mês', chave: 'k4', triagem: 'loja' }),
+    av('2026-10', 'E', 'TI', 8, { comentario: 'Marca desconhecida', chave: 'k5', triagem: 'qualquer' })
+  ];
+  const rh = M.acessoDe({ perfil: 'rh', permissoes: { 'indicadores.satisfacao': true, 'indicadores.satisfacao_completo': true } });
+  const ti = M.acessoDe({ perfil: 'gestor', permissoes: { 'indicadores.satisfacao': true }, satisfacao_areas: ['TI'] });
+
+  const cRh = M.comentarios(M.recortar(linhas, rh), '2026-10', 'TI', { todos: true });
+  check('visão completa: vê os 5, com a loja, a chave e a marca', cRh.length === 5 && cRh.every(c => c.loja && c.chave) && cRh.find(c => c.chave === 'k2').triagem === 'individual');
+  check('marca desconhecida é ignorada', cRh.find(c => c.chave === 'k5').triagem === null);
+  check('filtro "só os marcados"', M.comentarios(M.recortar(linhas, rh), '2026-10', 'TI', { todos: true, soTriados: true }).length === 3);
+
+  const rec = M.recortar(linhas, ti);
+  const cTi = M.comentarios(rec, '2026-10', 'TI', { todos: true });
+  check('área: "ocultar" e "individual" somem (3 comentários)', cTi.length === 3 && !cTi.some(c => /grosseiro|utilizo/.test(c.comentario)), cTi.map(c => c.comentario).join(' | '));
+  check('área: sem chave nem marca de triagem', cTi.every(c => c.chave === null && c.triagem === null) && rec.every(l => l.chave === null && l.triagem === null));
+  const liberado = cTi.find(c => /Computador/.test(c.comentario));
+  check('área: só o comentário liberado traz a loja', liberado.loja === 'O Boticário D' && liberado.lojaLiberada && cTi.filter(c => c.loja).length === 1);
+  check('área: unidade e departamento continuam fora', rec.every(l => l.unidade == null && l.departamento == null));
+  check('a nota do comentário escondido continua na conta da área', M.stats(rec).n === 5 && perto(M.stats(rec).media, 23 / 5));
+  check('não altera as linhas originais', linhas[1].comentario === 'Fulano foi grosseiro no chamado' && linhas[1].departamento === 'O Boticário B');
+  // o banco já manda a loja liberada pronta (sem unidade/departamento) para quem não tem a visão completa
+  const doBanco = [Object.assign(av('2026-10', 'D', 'TI', 4, { comentario: 'Computador parado', loja_liberada: 'O Boticário D' }), { unidade: null, departamento: null })];
+  check('loja liberada vinda do banco aparece', M.comentarios(M.recortar(doBanco, ti), '2026-10', 'TI', {})[0].loja === 'O Boticário D');
+  check('"escondeDaArea" só em ocultar e individual', M.TRIAGEM.ocultar.escondeDaArea && M.TRIAGEM.individual.escondeDaArea && !M.TRIAGEM.loja.escondeDaArea);
+});
+
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);

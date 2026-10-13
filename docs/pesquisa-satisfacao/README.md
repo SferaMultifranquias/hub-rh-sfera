@@ -70,6 +70,23 @@ Na 16 de 07/10/2026, ela pega os erros de ago/24 e ago/26. Os de mar/26, jan/26 
   - A coluna `ord` serve só para paginar. Ela segue a ordem ciclo → área → nota → comentário, sem relação com a ordem das respostas na planilha.
 - **No navegador:** `HUB_METRICS_SATISFACAO.recortar()` repete a regra para o "Visualizar como", em que a sessão real é a do Administrador.
 
+### Triagem dos comentários (13/10/2026)
+
+Decisão do RH: triagem **por exceção**. O responsável da área continua vendo todos os comentários da área, sem a loja. Quem tem a visão completa (`indicadores.satisfacao_completo`) marca só os casos delicados, direto no comentário:
+
+| Marca | Quando usar | O que o responsável da área vê |
+|---|---|---|
+| (sem marca) | padrão | o comentário, sem a loja |
+| **Ocultar da área** | fora do escopo da área, sem fato, nota incoerente | nada (o comentário não aparece) |
+| **Tratar individualmente** | cita uma pessoa ou conduta: conversa reservada com o gestor dela | nada |
+| **Liberar a loja** | o nome da loja ajuda a resolver | o comentário **com** o nome da loja |
+
+- **A nota continua contando** nos indicadores da área em qualquer caso: só o texto é escondido. A triagem não muda NPS nem nota.
+- **No banco:** tabela `satisfacao_triagem` (uma marca por comentário, sem policy de leitura) e função `satisfacao_triar(p_chave, p_acao)`, que exige a visão completa e respeita o recorte de unidade (`can_see`). `satisfacao_dados()` devolve `chave` e `triagem` só na visão completa; para a área, o comentário escondido volta vazio e o liberado traz `loja_liberada`.
+- **A marca é presa ao conteúdo** (`satisfacao_chave`: ciclo + unidade + departamento + área + texto), não ao id da resposta. Por isso sobrevive ao reenvio da planilha 16, que apaga e regrava as respostas. Se o texto ou a loja de um comentário mudar na planilha, a marca dele deixa de valer (fica órfã na tabela, sem efeito).
+- **Na tela:** seletor em cada comentário, selo com a marca, contagem do que não vai para a área e o filtro "Só os marcados na triagem". O "Visualizar como" repete a regra no navegador (`recortar`) e não deixa gravar.
+- **Testado** num Postgres local (PGlite) com 21 verificações: instalar por cima da versão anterior, rodar de novo, esconder da área, liberar a loja, recorte de unidade, sobreviver ao reenvio e desmarcar.
+
 ## Arquivos
 
 | Arquivo | Papel |
@@ -154,5 +171,5 @@ Escritório: nota geral 8,3 e NPS +43, com 53 respondentes.
 - [ ] Definir se o Boletim do mês M deve usar a pesquisa aplicada em M+1, já que a pesquisa avalia o mês anterior. Hoje ele usa a pesquisa aplicada no próprio mês M.
 - [ ] Opção "Não utilizo" no formulário, para tirar os zeros de quem não usa a área.
 - [x] Faixas de nota: ficam as do módulo (9 / 8 / 7), decisão do RH em 13/10/2026.
-- [ ] Comentários: triagem por exceção (decisão do RH em 13/10/2026) — o responsável da área continua vendo todos, sem loja; o DHO oculta ou marca só os casos delicados e pode liberar a loja quando ajudar a resolver. Pede SQL.
+- [x] Comentários: triagem por exceção (decisão do RH em 13/10/2026). Rodar de novo `supabase-satisfacao.sql` **antes** do push.
 - [ ] Próximo bloco (pede SQL e ajuste no upload): painel de adesão por supervisão e por dia, metas de NPS por área, triagem dos comentários pelo DHO, dossiê da área para a devolutiva, planos de ação e relatório do ciclo automático.

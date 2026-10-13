@@ -11,7 +11,7 @@
   const esc = U.escapeHtml;
 
   // simular: recalcula tudo sem as avaliações sinalizadas para conferência (nada é apagado).
-  const state = { ciclo: '', area: '', janela: 12, busca: '', ordem: 'menor', todos: false, simular: false };
+  const state = { ciclo: '', area: '', janela: 12, busca: '', ordem: 'menor', todos: false, simular: false, soTriados: false };
   // Ciclos do histórico de cada loja no card "Onde está a insatisfação".
   const CICLOS_HISTORICO_LOJA = 6;
   // Mudança no número de respondentes a partir da qual a variação pede cuidado.
@@ -43,6 +43,10 @@
     .sf-lj td.wrap{white-space:normal;min-width:180px;font-size:11.5px;color:var(--text2)}
     .sf-conf{display:flex;align-items:center;gap:8px;font-size:12px;margin:0 0 10px;cursor:pointer}
     .sf-conf input{margin:0}
+    .sf-tri{margin-left:auto;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;color:var(--text2);background:#fff;max-width:230px}
+    .sf-com.fora{background:#FAFAFB;border-style:dashed}
+    .sf-com.fora p{color:var(--text2)}
+    .sf-tag.lj{background:#E6F7F0;color:#0f8a4c;font-weight:700}
     .sf-gap{height:16px}
     .sf-rank td,.sf-rank th{white-space:nowrap}
     .sf-rank tbody tr{cursor:pointer}
@@ -357,7 +361,9 @@
       ${acesso.completo ? '<p><b>Mesmas lojas</b>: variação calculada só com as lojas/áreas que responderam nos dois ciclos. Separa a mudança de opinião da mudança de quem respondeu.</p>' : ''}
       <p><b>Respostas para conferir</b>: nota de 0 a 6 que marcou só "Nada a melhorar" e comentários de quem diz ter pouco contato com a área. A simulação mostra os indicadores sem elas; os números oficiais não mudam.</p>
       <p><b>Gestores aptos</b>: ativos com a tag <i>pesquisa.satisfação</i> no cadastro (foto do dia do upload, mesma regra do Boletim).</p>
-      ${acesso.completo ? '' : '<p><b>Sigilo</b>: você vê só as áreas liberadas no seu acesso, sem a loja ou operação de quem respondeu. Comentários são de gestores identificáveis por quem conhece o contexto — trate como confidencial.</p>'}
+      ${acesso.completo
+        ? '<p><b>Triagem dos comentários</b>: o responsável da área vê todos os comentários da área, sem a loja. Em cada comentário você pode marcar uma exceção — <i>ocultar da área</i> (fora do escopo, sem fato, nota incoerente), <i>tratar individualmente</i> (cita uma pessoa ou conduta: conversa reservada com o gestor dela) ou <i>liberar a loja</i> (quando o nome da loja ajuda a resolver). A nota continua contando nos indicadores em qualquer caso.</p>'
+        : '<p><b>Sigilo</b>: você vê só as áreas liberadas no seu acesso, sem a loja ou operação de quem respondeu, salvo nos comentários em que o DHO liberou a loja para ajudar a resolver. Comentários são de gestores identificáveis por quem conhece o contexto — trate como confidencial. Alguns comentários podem ser tratados à parte pelo DHO e não aparecem aqui.</p>'}
     </div>`, { full: true });
   }
 
@@ -437,6 +443,7 @@
         <input type="search" id="sf-busca" placeholder="Buscar nos comentários" value="${esc(state.busca)}">
         <select id="sf-ordem"><option value="menor"${state.ordem === 'menor' ? ' selected' : ''}>Menor nota primeiro</option><option value="maior"${state.ordem === 'maior' ? ' selected' : ''}>Maior nota primeiro</option></select>
         <label class="chk"><input type="checkbox" id="sf-todos"${state.todos ? ' checked' : ''}>Mostrar também os sem conteúdo (".", "ok", "nada a declarar")</label>
+        ${ctx.acesso.completo ? `<label class="chk"><input type="checkbox" id="sf-triados"${state.soTriados ? ' checked' : ''}>Só os marcados na triagem</label>` : ''}
       </div>
       <div id="sf-coms"></div>`, { full: true });
   }
@@ -444,16 +451,46 @@
   function desenharComentarios(ctx, area) {
     const box = document.getElementById('sf-coms');
     if (!box) return;
-    const lista = M.comentarios(ctx.respostas, state.ciclo, area, { busca: state.busca, ordem: state.ordem, todos: state.todos });
-    const total = M.comentarios(ctx.respostas, state.ciclo, area, { todos: true }).length;
-    const cab = `<p class="sf-note" style="margin:0 0 10px">${U.fmtInt(lista.length)} de ${U.fmtInt(total)} comentários${state.todos ? '' : ' (sem os vazios)'}. ${ctx.acesso.completo ? 'Visão completa: com a operação de origem.' : 'Sem loja ou operação de quem respondeu.'}</p>`;
+    const completo = ctx.acesso.completo;
+    const lista = M.comentarios(ctx.respostas, state.ciclo, area, { busca: state.busca, ordem: state.ordem, todos: state.todos, soTriados: completo && state.soTriados });
+    const todos = M.comentarios(ctx.respostas, state.ciclo, area, { todos: true });
+    // Triagem: quantos comentários deste ciclo não chegam ao responsável da área.
+    const fora = completo ? todos.filter(c => c.triagem && M.TRIAGEM[c.triagem].escondeDaArea).length : 0;
+    const comLoja = completo ? todos.filter(c => c.triagem === 'loja').length : 0;
+    const triagemTxt = completo
+      ? ` Triagem: por padrão o responsável da área vê todos os comentários, sem a loja. Marque só as exceções${fora || comLoja ? ` — hoje <b>${U.fmtInt(fora)}</b> não ${fora === 1 ? 'vai' : 'vão'} para a área e <b>${U.fmtInt(comLoja)}</b> ${comLoja === 1 ? 'vai' : 'vão'} com a loja` : ''}.`
+      : ' Sem loja ou operação de quem respondeu, salvo quando o DHO libera a loja para ajudar a resolver. Alguns comentários podem ser tratados à parte pelo DHO.';
+    const cab = `<p class="sf-note" style="margin:0 0 10px">${U.fmtInt(lista.length)} de ${U.fmtInt(todos.length)} comentários${state.todos ? '' : ' (sem os vazios)'}.${completo ? ' Visão completa: com a loja de origem.' : ''}${triagemTxt}</p>`;
     if (!lista.length) { box.innerHTML = cab + empty('Nenhum comentário neste recorte.'); return; }
-    box.innerHTML = cab + '<div class="sf-coms">' + lista.map(c => `<div class="sf-com"><div class="sf-com-h">
+    const seletor = c => !completo || !c.chave ? '' : `<select class="sf-tri" data-chave="${esc(c.chave)}" title="Triagem deste comentário">
+        <option value="">Vai para a área (sem a loja)</option>
+        ${Object.keys(M.TRIAGEM).map(k => `<option value="${k}"${c.triagem === k ? ' selected' : ''}>${esc(M.TRIAGEM[k].acao)}</option>`).join('')}
+      </select>`;
+    box.innerHTML = cab + '<div class="sf-coms">' + lista.map(c => {
+      const t = c.triagem ? M.TRIAGEM[c.triagem] : null;
+      return `<div class="sf-com${t && t.escondeDaArea ? ' fora' : ''}"><div class="sf-com-h">
         <span class="sf-chip" style="background:${corNota(c.nota)}" title="Nota dada à área">${c.nota == null ? '—' : U.fmtInt(c.nota)}</span>
         ${c.melhorar.map(m => `<span class="sf-tag">${esc(m)}</span>`).join('')}
         ${c.operacao ? `<span class="sf-tag op">${esc(c.operacao)}</span>` : ''}
+        ${c.loja ? `<span class="sf-tag${c.lojaLiberada ? ' lj' : ''}" title="${c.lojaLiberada ? 'Loja liberada pelo DHO para ajudar a resolver' : 'Loja / área de quem respondeu'}">${esc(c.loja)}</span>` : ''}
         ${c.sinal ? `<span class="sf-selo at" title="${esc(M.SINAIS[c.sinal])}">Conferir</span>` : ''}
-      </div><p>${esc(c.comentario)}</p></div>`).join('') + '</div>';
+        ${t ? `<span class="sf-selo ${t.escondeDaArea ? 'down' : 'up'}">${esc(t.rotulo)}</span>` : ''}
+        ${seletor(c)}
+      </div><p>${esc(c.comentario)}</p></div>`;
+    }).join('') + '</div>';
+
+    box.querySelectorAll('.sf-tri').forEach(sel => sel.addEventListener('change', async () => {
+      const anterior = (ctx.respostas.find(x => x.chave === sel.dataset.chave) || {}).triagem || '';
+      sel.disabled = true;
+      try {
+        await HUB_SATISFACAO.triar(sel.dataset.chave, sel.value);
+        desenharComentarios(ctx, area);
+      } catch (err) {
+        sel.value = anterior;
+        sel.disabled = false;
+        alert(err.message || 'Não consegui gravar a triagem.');
+      }
+    }));
   }
 
   // ---- Gráficos ----------------------------------------------------------------
@@ -599,6 +636,8 @@
         busca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { state.busca = busca.value; desenharComentarios(ctx, state.area); }, 200); });
         el.querySelector('#sf-ordem').addEventListener('change', e => { state.ordem = e.target.value; desenharComentarios(ctx, state.area); });
         el.querySelector('#sf-todos').addEventListener('change', e => { state.todos = e.target.checked; desenharComentarios(ctx, state.area); });
+        const tri = el.querySelector('#sf-triados');
+        if (tri) tri.addEventListener('change', e => { state.soTriados = e.target.checked; desenharComentarios(ctx, state.area); });
       }
     } else {
       desenharGeral(ctx);

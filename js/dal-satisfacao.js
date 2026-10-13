@@ -5,7 +5,8 @@
 //
 // Leitura só pela função satisfacao_dados() (ver supabase-satisfacao.sql): o
 // banco devolve apenas as áreas liberadas no perfil e, para quem não tem a visão
-// completa, sem unidade/departamento de quem respondeu.
+// completa, sem unidade/departamento de quem respondeu e sem os comentários que
+// a triagem tirou da área.
 (function () {
   const PAGE = 1000;
   const LOTE = 1000;
@@ -91,5 +92,20 @@
     return total;
   }
 
-  window.HUB_SATISFACAO = { carregar, invalidar, jaCarregado: () => carregado, areasConhecidas, salvar };
+  // Triagem de um comentário (só a visão completa): acao = 'ocultar' | 'individual' |
+  // 'loja', ou vazio para desmarcar. Atualiza o cache sem buscar tudo de novo.
+  async function triar(chave, acao) {
+    if (!chave) throw new Error('Este comentário ainda não pode ser triado: rode a versão mais recente de supabase-satisfacao.sql e atualize os dados.');
+    const { data, error } = await sb.rpc('satisfacao_triar', { p_chave: chave, p_acao: acao || '' });
+    if (error) {
+      if (/satisfacao_triar|schema cache|does not exist|not find/i.test(error.message || '')) throw new Error('A triagem dos comentários ainda não existe no Supabase (rode a versão mais recente de supabase-satisfacao.sql).');
+      throw new Error(error.message || 'Não consegui gravar a triagem.');
+    }
+    const d = window.HUB_SATISFACAO_DATA;
+    for (const r of d.respostas) if (r.chave === chave) r.triagem = data || null;
+    d.versao++;
+    return data || null;
+  }
+
+  window.HUB_SATISFACAO = { carregar, invalidar, jaCarregado: () => carregado, areasConhecidas, salvar, triar };
 })();
