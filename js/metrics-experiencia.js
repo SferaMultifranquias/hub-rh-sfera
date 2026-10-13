@@ -112,7 +112,8 @@
   function ehExtraNatal(r, info) {
     const adm = r.data_admissao ? String(r.data_admissao).slice(0, 10) : null;
     if (!info || !adm) return false;
-    return anosNatal(info.grupos).some(a => adm >= a + '-08-01' && adm <= (a + 1) + '-02-28');
+    // Admitido em setembro é Extra Natal, mas segue o prazo normal: continua nos ciclos de 45/90.
+    return anosNatal(info.grupos).some(a => adm >= a + '-10-01' && adm <= (a + 1) + '-02-28');
   }
 
   function situacaoDe(r, mapa) {
