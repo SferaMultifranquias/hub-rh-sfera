@@ -276,7 +276,76 @@
     if (M.temGrupo(r, 'cota.aprendiz')) tags.push(['Jovem Aprendiz', 'b4']);
     if (M.temGrupo(r, 'afastamento.inss')) tags.push(['INSS', 'b3']);
     if (M.temGrupo(r, 'afastamento.maternidade')) tags.push(['Maternidade', 'b1']);
+    if (emFerias(r)) tags.push(['Férias', 'b-ferias']);
     return tags.map(([label, cls]) => ` <span class="badge ${cls}" style="font-size:9.5px;padding:2px 6px">${label}</span>`).join('');
+  }
+
+  // Mesma regra do cartão "Férias": desativado sem tag de afastamento.
+  const desativado = r => String(r.situacao || '').trim().toLowerCase() === 'desativado';
+  function emFerias(r) {
+    return desativado(r) && !M.temGrupo(r, 'afastamento.inss') && !M.temGrupo(r, 'afastamento.maternidade');
+  }
+
+  // Lista de colaboradores do Headcount: filtro "Mostrar" e ordenação pelo
+  // título da coluna. A escolha fica guardada enquanto a página está aberta.
+  const HC_LISTA = { mostrar: '', coluna: '', dir: 1 };
+  const HC_MOSTRAR = [
+    ['', 'Todos'],
+    ['ativos', 'Ativos', r => !desativado(r)],
+    ['desativados', 'Desativados', desativado],
+    ['ferias', 'Férias', emFerias],
+    ['inss', 'Afastamento INSS', r => M.temGrupo(r, 'afastamento.inss')],
+    ['maternidade', 'Licença Maternidade', r => M.temGrupo(r, 'afastamento.maternidade')],
+    ['pcd', 'Cota PCD', r => M.temGrupo(r, 'cota.pcd')],
+    ['aprendiz', 'Cota Jovem Aprendiz', r => M.temGrupo(r, 'cota.aprendiz')]
+  ];
+  const HC_COLUNAS = [
+    ['nome', 'Nome', r => r.nome_completo || r.nome || ''],
+    ['cargo', 'Cargo', r => r.cargo || ''],
+    ['unidade', 'Unidade', r => r.unidade || ''],
+    ['departamento', 'Departamento', r => r.departamento || ''],
+    ['gestor', 'Gestor', r => r.gestor_direto || ''],
+    ['situacao', 'Situação', r => r.situacao || ''],
+    ['admissao', 'Admissão', r => r.data_admissao || ''],
+    ['fim45', 'Fim experiência (45d)', r => r.data_admissao || ''],
+    ['fim90', 'Fim prorrogação (90d)', r => r.data_admissao || '']
+  ];
+  const HC_MAX = 300;
+
+  function desenharListaHeadcount(lista) {
+    const box = document.getElementById('hc-lista');
+    if (!box) return;
+    const filtro = HC_MOSTRAR.find(o => o[0] === HC_LISTA.mostrar);
+    const rows = filtro && filtro[2] ? lista.filter(filtro[2]) : lista.slice();
+    const col = HC_COLUNAS.find(c => c[0] === HC_LISTA.coluna);
+    if (col) {
+      // Vazios sempre no fim, em qualquer direção.
+      rows.sort((a, b) => {
+        const va = String(col[2](a)), vb = String(col[2](b));
+        if (!va || !vb) return va ? -1 : vb ? 1 : 0;
+        return va.localeCompare(vb, 'pt-BR', { sensitivity: 'base' }) * HC_LISTA.dir;
+      });
+    }
+    const seta = id => HC_LISTA.coluna === id ? (HC_LISTA.dir === 1 ? ' &#9650;' : ' &#9660;') : '';
+    const corpo = rows.slice(0, HC_MAX).map(r => `<tr><td>${U.escapeHtml(r.nome_completo || r.nome || '')}${badgesGruposHTML(r)}</td><td>${U.escapeHtml(r.cargo || '')}</td><td>${U.escapeHtml(r.unidade || '')}</td><td>${U.escapeHtml(r.departamento || '')}</td><td>${U.escapeHtml(r.gestor_direto || '')}</td><td><span class="badge ${r.situacao === 'Ativo' ? 'b2' : 'b4'}">${U.escapeHtml(r.situacao || '')}</span></td><td>${U.fmtDateBR(r.data_admissao)}</td><td>${r.data_admissao ? U.fmtDateBR(U.addDays(r.data_admissao, 45)) : '—'}</td><td>${r.data_admissao ? U.fmtDateBR(U.addDays(r.data_admissao, 90)) : '—'}</td></tr>`).join('');
+    box.innerHTML = `<div class="hc-lista-bar">
+        <label for="hc-mostrar">Mostrar</label>
+        <select id="hc-mostrar">${HC_MOSTRAR.map(o => `<option value="${o[0]}"${o[0] === HC_LISTA.mostrar ? ' selected' : ''}>${o[1]}</option>`).join('')}</select>
+        <span class="hc-lista-n">${U.fmtInt(rows.length)} colaborador(es)</span>
+        <span class="dash-dica" style="margin:0 0 0 auto">Clique no título de uma coluna para ordenar.</span>
+      </div>
+      ${rows.length ? `<div class="table-wrap"><table class="dt hc-lista-t"><thead><tr>${HC_COLUNAS.map(c => `<th data-col="${c[0]}" tabindex="0" role="button" title="Ordenar por ${c[1]}">${c[1]}${seta(c[0])}</th>`).join('')}</tr></thead><tbody>${corpo}</tbody></table></div>` : empty('Nenhum colaborador nesse filtro.')}
+      ${rows.length > HC_MAX ? `<p class="sub" style="margin-top:8px">Exibindo ${HC_MAX} de ${U.fmtInt(rows.length)}. Refine os filtros para ver outros.</p>` : ''}`;
+    box.querySelector('#hc-mostrar').addEventListener('change', e => { HC_LISTA.mostrar = e.target.value; desenharListaHeadcount(lista); });
+    const ordenar = id => {
+      if (HC_LISTA.coluna === id) { if (HC_LISTA.dir === 1) HC_LISTA.dir = -1; else { HC_LISTA.coluna = ''; HC_LISTA.dir = 1; } }
+      else { HC_LISTA.coluna = id; HC_LISTA.dir = 1; }
+      desenharListaHeadcount(lista);
+    };
+    box.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => ordenar(th.dataset.col));
+      th.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ordenar(th.dataset.col); } });
+    });
   }
 
   function renderHeadcount(el, f) {
@@ -303,12 +372,13 @@
         ${card('Headcount por departamento', '&#128194;', '<div class="chart-h"><canvas id="c-col-depto"></canvas></div>')}
         ${card('Distribuição por sexo', '&#9878;&#65039;', '<div class="chart-h short"><canvas id="c-col-sexo"></canvas></div>')}
         ${card('Aniversariantes (próx. 30 dias)', '&#127874;', d.aniversariantes.length ? `<div class="table-wrap"><table class="dt"><thead><tr><th>Nome</th><th>Cargo</th><th>Data</th><th>Departamento</th></tr></thead><tbody>${d.aniversariantes.map(a => `<tr><td>${U.escapeHtml(a.nome)}</td><td>${U.escapeHtml(a.cargo || '')}</td><td>${U.fmtDateBR(a.data)}</td><td>${U.escapeHtml(a.departamento || '')}</td></tr>`).join('')}</tbody></table></div>` : empty('Nenhum aniversariante nos próximos 30 dias.'))}
-        ${card('Lista de colaboradores', '&#128203;', `<div class="table-wrap"><table class="dt"><thead><tr><th>Nome</th><th>Cargo</th><th>Unidade</th><th>Departamento</th><th>Gestor</th><th>Situação</th><th>Admissão</th><th>Fim experiência (45d)</th><th>Fim prorrogação (90d)</th></tr></thead><tbody>${d.lista.slice(0, 300).map(r => `<tr><td>${U.escapeHtml(r.nome_completo || r.nome || '')}${badgesGruposHTML(r)}</td><td>${U.escapeHtml(r.cargo || '')}</td><td>${U.escapeHtml(r.unidade || '')}</td><td>${U.escapeHtml(r.departamento || '')}</td><td>${U.escapeHtml(r.gestor_direto || '')}</td><td><span class="badge ${r.situacao === 'Ativo' ? 'b2' : 'b4'}">${U.escapeHtml(r.situacao || '')}</span></td><td>${U.fmtDateBR(r.data_admissao)}</td><td>${r.data_admissao ? U.fmtDateBR(U.addDays(r.data_admissao, 45)) : '—'}</td><td>${r.data_admissao ? U.fmtDateBR(U.addDays(r.data_admissao, 90)) : '—'}</td></tr>`).join('')}</tbody></table></div>${d.lista.length > 300 ? `<p class="sub" style="margin-top:8px">Exibindo 300 de ${U.fmtInt(d.lista.length)}. Refine os filtros para ver outros.</p>` : ''}`, { full: true })}
+        ${card('Lista de colaboradores', '&#128203;', '<div id="hc-lista"></div>', { full: true })}
       </div>`;
     const pu = d.porUnidade, pd = d.porDepartamento.slice(0, 12), ps = d.porSexo;
     barChart('c-col-unidade', pu.map(x => x.label), pu.map(x => x.value));
     barChart('c-col-depto', pd.map(x => x.label), pd.map(x => x.value), { horizontal: true });
     doughnutChart('c-col-sexo', ps.map(x => x.label), ps.map(x => x.value));
+    desenharListaHeadcount(d.lista);
   }
 
   // ==================================================================
