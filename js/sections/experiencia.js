@@ -13,6 +13,7 @@
   const { kpi, empty, card, insightsCard, insightsList, barChart, doughnutChart } = HUB_UI;
 
   let ciclo = 45;               // 45 | 90 | 'evolucao'
+  let desconsiderarNatal = true;    // Extra Natal fora dos ciclos de 45/90 (tem aba e calendário próprios)
   let desconsiderarDispensa = true; // aprendiz/estagiário fora da contagem (avaliação não obrigatória)
   let aba = 'indicadores';      // 'indicadores' | 'lista'
   const lista = { busca: '', conceito: 'todos', status: 'todos', situacaoColab: 'todos', ordem: 'recentes', pagina: 1 };
@@ -83,7 +84,7 @@
   // Entrada
   // ==================================================================
   function renderExperiencia(el, f) {
-    f = Object.assign({}, f, { semDispensa: desconsiderarDispensa });
+    f = Object.assign({}, f, { semDispensa: desconsiderarDispensa, semNatal: desconsiderarNatal });
     const assinatura = JSON.stringify(f);
     if (assinatura !== ultimoFiltro) { lista.pagina = 1; ultimoFiltro = assinatura; }
     const meu = ++tokenRender;
@@ -95,23 +96,27 @@
           <button type="button" class="ave-ciclo ${ciclo === 45 ? 'active' : ''}" data-ciclo="45"><b>Avaliação de 45 dias</b><span>${sub(45)}</span></button>
           <button type="button" class="ave-ciclo ${ciclo === 90 ? 'active' : ''}" data-ciclo="90"><b>Avaliação de 90 dias</b><span>${sub(90)}</span></button>
           <button type="button" class="ave-ciclo ${ciclo === 'evolucao' ? 'active' : ''}" data-ciclo="evolucao"><b>Evolução 45 &rarr; 90 dias</b><span>mesmo colaborador nos dois ciclos</span></button>
+          <button type="button" class="ave-ciclo ${ciclo === 'natal' ? 'active' : ''}" data-ciclo="natal"><b>Extra Natal</b><span>${U.fmtInt(HUB_EXP_NATAL.contagemAtual())} contratados em ${new Date().getFullYear()}</span></button>
         </div>
-        ${ciclo === 'evolucao' ? '' : `<div class="tab-bar" style="margin-bottom:0">
+        ${ciclo === 'evolucao' || ciclo === 'natal' ? '' : `<div class="tab-bar" style="margin-bottom:0">
           <button type="button" class="tab-btn ${aba === 'indicadores' ? 'active' : ''}" data-ave-aba="indicadores">Indicadores</button>
           <button type="button" class="tab-btn ${aba === 'lista' ? 'active' : ''}" data-ave-aba="lista">Lista de Colaboradores</button>
         </div>`}
       </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin:0 0 12px;cursor:pointer" title="Jovens aprendizes e estagiários têm contrato fixo e predeterminado: a avaliação de experiência (até 90 dias) não é obrigatória para eles">
+      ${ciclo === 'natal' ? '' : `<div style="display:flex;gap:6px 22px;flex-wrap:wrap;margin:0 0 12px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin:0;cursor:pointer" title="Jovens aprendizes e estagiários têm contrato fixo e predeterminado: a avaliação de experiência (até 90 dias) não é obrigatória para eles">
         <input type="checkbox" id="ave-dispensa" style="width:auto" ${desconsiderarDispensa ? 'checked' : ''}> Desconsiderar jovens aprendizes e estagiários (avaliação não obrigatória)
       </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin:0;cursor:pointer" title="Os contratados de Extra Natal têm período de experiência próprio (calendário do DP) e são acompanhados na aba Extra Natal">
+        <input type="checkbox" id="ave-natal" style="width:auto" ${desconsiderarNatal ? 'checked' : ''}> Desconsiderar Extra Natal (acompanhado na aba própria)
+      </label>
+      </div>`}
       <div id="ave-body"><div class="empty"><p>Carregando avaliações...</p></div></div>`;
-    el.querySelector('#ave-dispensa').addEventListener('change', e => {
-      desconsiderarDispensa = e.target.checked;
-      lista.pagina = 1;
-      renderExperiencia(el, f);
-    });
+    const cbDisp = el.querySelector('#ave-dispensa'), cbNatal = el.querySelector('#ave-natal');
+    if (cbDisp) cbDisp.addEventListener('change', e => { desconsiderarDispensa = e.target.checked; lista.pagina = 1; renderExperiencia(el, f); });
+    if (cbNatal) cbNatal.addEventListener('change', e => { desconsiderarNatal = e.target.checked; lista.pagina = 1; renderExperiencia(el, f); });
     el.querySelectorAll('[data-ciclo]').forEach(b => b.addEventListener('click', () => {
-      ciclo = b.dataset.ciclo === 'evolucao' ? 'evolucao' : Number(b.dataset.ciclo);
+      ciclo = b.dataset.ciclo === 'evolucao' || b.dataset.ciclo === 'natal' ? b.dataset.ciclo : Number(b.dataset.ciclo);
       lista.pagina = 1;
       renderExperiencia(el, f);
     }));
@@ -121,12 +126,13 @@
     }));
 
     const body = el.querySelector('#ave-body');
-    const ciclos = ciclo === 'evolucao' ? [45, 90] : [ciclo];
+    const ciclos = ciclo === 'evolucao' || ciclo === 'natal' ? [45, 90] : [ciclo];
     Promise.all(ciclos.map(c => HUB_EXPERIENCIA.carregar(c))).then(() => {
       if (meu !== tokenRender) return;
       if (typeof window.HUB_REFRESH_FILTER_OPTIONS === 'function') window.HUB_REFRESH_FILTER_OPTIONS();
       ciclos.forEach(c => { const sp = el.querySelector(`[data-ciclo="${c}"] span`); if (sp) sp.textContent = `${U.fmtInt(carregados(c).length)} colaboradores`; });
       if (ciclo === 'evolucao') return renderEvolucao(body, f);
+      if (ciclo === 'natal') return HUB_EXP_NATAL.render(body, f);
       const rows = carregados(ciclo);
       if (!rows.length) {
         body.innerHTML = empty(`Nenhuma avaliação de ${ciclo} dias importada ainda.`,
