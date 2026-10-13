@@ -270,13 +270,17 @@
   // Badges de identificação ao lado do nome, na Lista de colaboradores —
   // cota PCD/Jovem Aprendiz e afastamento INSS/Maternidade (mesmas tags de
   // colaboradores.grupos usadas nos 4 cards do topo, ver M.temGrupo).
-  function badgesGruposHTML(r) {
+  function tagsDoColaborador(r) {
     const tags = [];
     if (M.temGrupo(r, 'cota.pcd')) tags.push(['PCD', 'b5']);
     if (M.temGrupo(r, 'cota.aprendiz')) tags.push(['Jovem Aprendiz', 'b4']);
     if (M.temGrupo(r, 'afastamento.inss')) tags.push(['INSS', 'b3']);
     if (M.temGrupo(r, 'afastamento.maternidade')) tags.push(['Maternidade', 'b1']);
     if (emFerias(r)) tags.push(['Férias', 'b-ferias']);
+    return tags;
+  }
+  function badgesGruposHTML(r) {
+    const tags = tagsDoColaborador(r);
     return tags.map(([label, cls]) => ` <span class="badge ${cls}" style="font-size:9.5px;padding:2px 6px">${label}</span>`).join('');
   }
 
@@ -312,6 +316,30 @@
   ];
   const HC_MAX = 300;
 
+  // Exporta a lista como está na tela (filtro "Mostrar" + ordenação), mas
+  // inteira — sem o corte de HC_MAX linhas. Datas vão como data do Excel.
+  function exportarListaHeadcount(rows) {
+    if (!window.XLSX) { alert('Não foi possível gerar o Excel: a biblioteca de planilhas não carregou. Recarregue a página e tente de novo.'); return; }
+    const data = iso => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+      if (!m) return null;
+      return { t: 'n', z: 'dd/mm/yyyy', v: (Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 86400000 };
+    };
+    const cab = ['Nome', 'Cargo', 'Unidade', 'Departamento', 'Gestor', 'Situação', 'Identificação', 'Admissão', 'Fim experiência (45d)', 'Fim prorrogação (90d)'];
+    const linhas = rows.map(r => [
+      r.nome_completo || r.nome || '', r.cargo || '', r.unidade || '', r.departamento || '', r.gestor_direto || '', r.situacao || '',
+      tagsDoColaborador(r).map(t => t[0]).join(', '),
+      data(r.data_admissao), data(r.data_admissao && U.addDays(r.data_admissao, 45)), data(r.data_admissao && U.addDays(r.data_admissao, 90))
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([cab].concat(linhas));
+    ws['!cols'] = [38, 32, 28, 34, 28, 12, 22, 12, 20, 20].map(wch => ({ wch }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: linhas.length, c: cab.length - 1 } }) };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Colaboradores');
+    const filtro = HC_LISTA.mostrar ? '_' + HC_LISTA.mostrar : '';
+    XLSX.writeFile(wb, `headcount-colaboradores${filtro}_${U.todayISO()}.xlsx`);
+  }
+
   function desenharListaHeadcount(lista) {
     const box = document.getElementById('hc-lista');
     if (!box) return;
@@ -333,10 +361,12 @@
         <select id="hc-mostrar">${HC_MOSTRAR.map(o => `<option value="${o[0]}"${o[0] === HC_LISTA.mostrar ? ' selected' : ''}>${o[1]}</option>`).join('')}</select>
         <span class="hc-lista-n">${U.fmtInt(rows.length)} colaborador(es)</span>
         <span class="dash-dica" style="margin:0 0 0 auto">Clique no título de uma coluna para ordenar.</span>
+        <button type="button" class="btn btn-outline btn-sm" id="hc-exportar"${rows.length ? '' : ' disabled'} title="Baixa a lista inteira deste filtro, na ordem da tela">Exportar Excel</button>
       </div>
       ${rows.length ? `<div class="table-wrap"><table class="dt hc-lista-t"><thead><tr>${HC_COLUNAS.map(c => `<th data-col="${c[0]}" tabindex="0" role="button" title="Ordenar por ${c[1]}">${c[1]}${seta(c[0])}</th>`).join('')}</tr></thead><tbody>${corpo}</tbody></table></div>` : empty('Nenhum colaborador nesse filtro.')}
       ${rows.length > HC_MAX ? `<p class="sub" style="margin-top:8px">Exibindo ${HC_MAX} de ${U.fmtInt(rows.length)}. Refine os filtros para ver outros.</p>` : ''}`;
     box.querySelector('#hc-mostrar').addEventListener('change', e => { HC_LISTA.mostrar = e.target.value; desenharListaHeadcount(lista); });
+    box.querySelector('#hc-exportar').addEventListener('click', () => exportarListaHeadcount(rows));
     const ordenar = id => {
       if (HC_LISTA.coluna === id) { if (HC_LISTA.dir === 1) HC_LISTA.dir = -1; else { HC_LISTA.coluna = ''; HC_LISTA.dir = 1; } }
       else { HC_LISTA.coluna = id; HC_LISTA.dir = 1; }
