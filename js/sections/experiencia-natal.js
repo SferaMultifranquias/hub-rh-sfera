@@ -87,7 +87,60 @@
     return 'Não informado';
   }
 
-  function montar(ano, f) {
+  // ------------------------------------------------------------------
+  // Reposição após o Extra Natal: vagas de substituição (Controle de Vagas)
+  // abertas na MESMA LOJA e MESMA FAMÍLIA DE CARGO em até 60 dias depois da
+  // saída. A vaga não registra quem foi substituído, então o vínculo é por
+  // loja + cargo + data; cada vaga conta para um desligado só.
+  // ------------------------------------------------------------------
+  const JANELA_REPOSICAO = 60;
+  let vagasCache = null, vagasErro = null, vagasPromise = null;
+  function carregarVagas() {
+    if (vagasCache) return Promise.resolve(vagasCache);
+    if (vagasPromise) return vagasPromise;
+    vagasPromise = (async () => {
+      const all = [];
+      for (let de = 0; ; de += 1000) {
+        const { data, error } = await window.sb.from('vagas').select('id,data_abertura,unidade,departamento,cargo,status,tipo_movimentacao').order('id', { ascending: true }).range(de, de + 999);
+        if (error) throw error;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      vagasCache = all.map(r => ({ id: r.id, abertura: r.data_abertura ? String(r.data_abertura).slice(0, 10) : null, loja: r.departamento, cargo: r.cargo, status: r.status, tipo: r.tipo_movimentacao }));
+      return vagasCache;
+    })().catch(err => { vagasErro = err.message || 'erro'; vagasPromise = null; return null; });
+    return vagasPromise;
+  }
+
+  // Família do cargo: "Consultor(a) de Vendas" = "Consultor De Vendas",
+  // "Vendedor(a) Hering" = "Vendedor", "Caixa Hering" = "Caixa".
+  function familiaCargo(c) {
+    return norm(c).replace(/\((?:a|as|o)\)/g, '').replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(o boticario|boticario|hering|levi s|levis|quem disse berenice)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function aplicarReposicao(rows, vagas) {
+    const porLoja = new Map();
+    for (const v of vagas) {
+      if (!v.abertura || !v.loja || !norm(v.tipo).startsWith('substitui') || norm(v.status) === 'cancelada') continue;
+      const k = norm(v.loja);
+      if (!porLoja.has(k)) porLoja.set(k, []);
+      porLoja.get(k).push({ v, fam: familiaCargo(v.cargo), usadaCargo: false, usadaLoja: false });
+    }
+    for (const l of porLoja.values()) l.sort((a, b) => a.v.abertura.localeCompare(b.v.abertura));
+    const des = rows.filter(r => r.desligado && r.saida && r.departamento).sort((a, b) => a.saida.localeCompare(b.saida));
+    for (const r of des) {
+      const lista = porLoja.get(norm(r.departamento)) || [];
+      const limite = U.addDays(r.saida, JANELA_REPOSICAO), fam = familiaCargo(r.cargo);
+      const naJanela = x => x.v.abertura >= r.saida && x.v.abertura <= limite;
+      const x = lista.find(x => !x.usadaCargo && x.fam === fam && naJanela(x));
+      if (x) { x.usadaCargo = true; r.reposicao = { id: x.v.id, abertura: x.v.abertura, cargo: x.v.cargo, dias: dias(r.saida, x.v.abertura) }; }
+      const y = lista.find(y => !y.usadaLoja && naJanela(y));
+      if (y) { y.usadaLoja = true; r.reposicaoLoja = true; }
+    }
+  }
+
+  function montar(ano, f, vagas) {
     const hoje = U.todayISO();
     const ini = `${ano}-08-01`, fimJanela = `${ano + 1}-02-28`;
     const naJanela = d => !!d && d >= ini && d <= fimJanela;
@@ -140,6 +193,7 @@
         ultimoMartelo: ultima ? ultima.martelo : null
       });
     }
+    if (vagas) aplicarReposicao(out, vagas);
     return out;
   }
 
@@ -184,6 +238,7 @@
     desl_vol: ['Desligados — voluntário', r => r.tipoDeslig === 'Voluntário'],
     desl_inv: ['Desligados — involuntário', r => r.tipoDeslig === 'Involuntário'],
     aprov_desl: ['Aprovados na avaliação e desligados pela empresa', aprovadoDesligado],
+    reposicao: ['Desligados com vaga de reposição aberta em seguida', r => !!r.reposicao],
     deslig: ['Desligados sem avaliação', r => r.desligado && !algum(r, e => FEITAS.includes(e.sit))],
     evitar: ['Admissão em data a evitar', r => r.evitar]
   };
@@ -223,14 +278,15 @@
 
   function exportar(rows, ano) {
     const cab = ['Colaborador', 'Situação', 'Cargo', 'Unidade', 'Departamento', 'Gestor', 'Admissão', 'Regra de prazo', 'Data a evitar', 'Saída',
-      'Desligamento — tipo', 'Desligamento — motivo', 'Momento da saída', 'Aproveitado após a experiência',
+      'Desligamento — tipo', 'Desligamento — motivo', 'Momento da saída', 'Aproveitado após a experiência', 'Vaga de reposição (mesma loja e cargo, até 60 dias)', 'Vaga aberta em', 'Dias após a saída',
       '1º período — liberar até', '1º período — entregar até', '1º período — fim do período', '1º período — situação', '1º período — avaliado em', '1º período — Batendo o Martelo', '1º período — nota gestor',
       '2º período — liberar até', '2º período — entregar até', '2º período — fim do período', '2º período — situação', '2º período — avaliado em', '2º período — Batendo o Martelo', '2º período — nota gestor'];
     const cel = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
     const et = e => [e.lib, e.prazo, e.fim, (SIT[e.sit] || [])[1], e.data, e.martelo ? M.MARTELO[e.martelo] : '', e.nota === null ? '' : e.nota.toFixed(2).replace('.', ',')];
     const linhas = rows.map(r => [r.nome, r.situacao ? M.SITUACOES[r.situacao] || r.situacao : '', r.cargo, r.unidade, r.departamento, r.gestor, r.adm,
       r.regra === 'normal' ? 'Normal (admissão em setembro)' : r.regra === 'calendario' ? 'Calendário Extra Natal' : '', r.evitar ? 'Sim' : '', r.saida,
-      r.tipoDesligTxt, r.motivo, r.momento, r.encerrado ? (r.aproveitado ? 'Sim' : 'Não') : 'Em experiência']
+      r.tipoDesligTxt, r.motivo, r.momento, r.encerrado ? (r.aproveitado ? 'Sim' : 'Não') : 'Em experiência',
+      r.reposicao ? r.reposicao.id : '', r.reposicao ? r.reposicao.abertura : '', r.reposicao ? r.reposicao.dias : '']
       .concat(et(r.e1)).concat(et(r.e2)).map(cel).join(';'));
     const blob = new Blob(['﻿' + [cab.map(cel).join(';')].concat(linhas).join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -280,12 +336,44 @@
       <p style="${SUB};margin-top:8px">Tipo e motivo vêm do Headcount (Desligamento - Tipo / Motivo). <b>Aproveitamento</b> = seguiu na empresa depois do fim da experiência de Natal${CALENDARIOS[ano] ? '' : ` (sem calendário para ${ano}: considera o fim da temporada, 28/02/${ano + 1})`}; só entra na conta quem já passou dessa data.</p>`;
   }
 
+  function blocoReposicao(rows, ano, vagas) {
+    const titulo = '<h3 style="font-size:14px;margin:22px 0 12px">Reposição após o Extra Natal ' + ano + '</h3>';
+    if (!vagas) return titulo + card('Vagas de reposição', '&#128269;', empty(vagasErro ? 'Não consegui ler o Controle de Vagas.' : 'Carregando o Controle de Vagas...', vagasErro ? 'O cruzamento com as vagas de substituição depende do acesso ao módulo de Recrutamento.' : ''));
+    const d = rows.filter(r => r.desligado && r.saida);
+    if (!d.length) return '';
+    const inv = d.filter(r => r.tipoDeslig === 'Involuntário'), vol = d.filter(r => r.tipoDeslig === 'Voluntário');
+    const rep = arr => arr.filter(r => r.reposicao).length;
+    const aprov = d.filter(aprovadoDesligado);
+    const p = (n, t) => (t ? pct(n / t) : '—');
+    const naLoja = d.filter(r => r.reposicaoLoja).length;
+    const ultima = vagas.map(v => v.abertura).filter(Boolean).sort().pop();
+    const kpis = '<div class="kpi-grid">' +
+      kpi('Desligados com vaga de reposição', U.fmtInt(rep(d)), p(rep(d), d.length) + ' dos ' + U.fmtInt(d.length) + ' desligados · mesma loja e cargo, em até ' + JANELA_REPOSICAO + ' dias', 'var(--p1)') +
+      kpi('Vagas que poderiam ter sido evitadas', U.fmtInt(rep(inv)), p(rep(inv), inv.length) + ' dos ' + U.fmtInt(inv.length) + ' desligados pela empresa tiveram vaga de substituição aberta em seguida', rep(inv) ? 'var(--critical)' : '#1baf7a') +
+      kpi('Aprovados, desligados e repostos', U.fmtInt(rep(aprov)), 'de ' + U.fmtInt(aprov.length) + ' aprovados na avaliação e desligados pela empresa', rep(aprov) ? 'var(--critical)' : '#1baf7a') +
+      kpi('Reposição de saídas voluntárias', U.fmtInt(rep(vol)), p(rep(vol), vol.length) + ' dos ' + U.fmtInt(vol.length) + ' que pediram para sair', '#eb6834') +
+      kpi('Mesma loja, qualquer cargo', U.fmtInt(naLoja), p(naLoja, d.length) + ' dos desligados — leitura mais ampla, sem exigir o mesmo cargo', '#8A8F98') +
+      '</div>';
+    const lojas = contar(d, r => r.departamento || 'Não informado').map(([k, rs]) => {
+      const i = rs.filter(r => r.tipoDeslig === 'Involuntário');
+      return { k, un: rs[0].unidade, n: rs.length, inv: i.length, rep: rep(rs), repInv: rep(i), repAprov: rep(rs.filter(aprovadoDesligado)) };
+    }).filter(x => x.rep > 0).sort((a, b) => b.repInv - a.repInv || b.rep - a.rep).slice(0, 15);
+    const linhas = lojas.map(x => '<tr><td>' + esc(x.k) + '<div style="color:var(--muted);font-size:10.5px">' + esc(x.un) + '</div></td><td>' + U.fmtInt(x.n) + '</td><td>' + (x.inv ? U.fmtInt(x.inv) : zero) + '</td><td><b>' + U.fmtInt(x.rep) + '</b></td><td>' + forte(x.repInv) + '</td><td>' + forte(x.repAprov) + '</td></tr>').join('');
+    const tab = lojas.length
+      ? '<div class="table-wrap"><table class="dt"><thead><tr><th>Loja</th><th>Desligados do Extra Natal</th><th>Pela empresa</th><th title="Vagas de substituição abertas na mesma loja e cargo, em até ' + JANELA_REPOSICAO + ' dias">Vagas de reposição</th><th>Reposição de desligados pela empresa</th><th title="Aprovados pelo gestor na última avaliação, desligados pela empresa e com vaga de reposição">Aprovados repostos</th></tr></thead><tbody>' + linhas + '</tbody></table></div>'
+      : empty('Nenhuma vaga de substituição aberta na mesma loja e cargo depois das saídas.');
+    return titulo + kpis + card('Lojas que desligaram e abriram vaga em seguida', '&#128260;', tab) +
+      '<p style="' + SUB + ';margin-top:8px">Considera vagas de <b>Substituição</b> e <b>Substituição - Extra Natal</b> do Controle de Vagas (sem as canceladas), abertas na mesma loja e na mesma família de cargo em até ' + JANELA_REPOSICAO + ' dias depois da saída. A vaga não registra quem foi substituído, então o vínculo é por loja, cargo e data; cada vaga conta para um desligado só. Última vaga aberta no Controle de Vagas: ' + (ultima ? U.fmtDateBR(ultima) : '—') + '.</p>';
+  }
+
   function render(body, f) {
     const anos = anosDisponiveis();
     if (!estado.ano || !anos.includes(estado.ano)) estado.ano = anos.includes(new Date().getFullYear()) ? new Date().getFullYear() : anos[0];
     const ano = estado.ano;
     const cal = CALENDARIOS[ano];
-    const rows = montar(ano, f);
+    const vagas = vagasCache;
+    if (!vagas && !vagasErro) carregarVagas().then(() => { if (body.isConnected && body.querySelector('#natal-ano')) render(body, f); });
+    const rows = montar(ano, f, vagas);
     const a1 = resumoEtapa(rows, 'e1'), a2 = resumoEtapa(rows, 'e2');
     const ativos = rows.filter(r => !r.desligado).length;
     const prox7 = rows.filter(FILTROS.proximas[1]).length;
@@ -338,6 +426,7 @@
         ${cal ? card(`Calendário de experiência — Extra Natal ${ano}`, '&#128197;', tabCal) : ''}
       </div>
       ${blocoDesligamentos(rows, ano)}
+      ${blocoReposicao(rows, ano, vagas)}
       <h3 style="font-size:14px;margin:22px 0 12px">Colaboradores</h3>
       <div class="toolbar">
         <input type="text" id="natal-busca" placeholder="Buscar colaborador, cargo, unidade ou gestor..." value="${esc(estado.busca)}">
@@ -360,7 +449,7 @@
           <td>${esc(r.unidade)}<div style="color:var(--muted);font-size:10.5px">${esc(r.gestor)}</div></td>
           <td>${r.adm ? U.fmtDateBR(r.adm) : '—'}${r.regra === 'normal' ? '<div style="color:var(--muted);font-size:10.5px" title="Admissão em setembro: segue o prazo normal de 45/90 dias">prazo normal</div>' : ''}${r.evitar ? '<div><span class="ave-pill" style="--c:#eb6834" title="A planilha do DP marca esta data de admissão como EVITAR (experiência curta)">Data a evitar</span></div>' : ''}</td>
           ${celEtapa(r.e1)}${celEtapa(r.e2)}
-          <td>${r.desligado ? `<span class="ave-pill" style="--c:${r.tipoDeslig === 'Voluntário' ? '#eb6834' : r.tipoDeslig === 'Involuntário' ? '#9b1c1c' : '#8A8F98'}" title="${esc(r.tipoDesligTxt)}">${r.tipoDeslig}</span><div style="font-size:10.5px;color:var(--muted)">${esc(r.motivo)}${r.saida ? ` · ${U.fmtDateBR(r.saida)}` : ''}</div>${aprovadoDesligado(r) ? '<div style="font-size:10.5px;color:var(--critical);font-weight:700">aprovado na avaliação</div>' : ''}` : '<span style="color:var(--muted)">—</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+          <td>${r.desligado ? `<span class="ave-pill" style="--c:${r.tipoDeslig === 'Voluntário' ? '#eb6834' : r.tipoDeslig === 'Involuntário' ? '#9b1c1c' : '#8A8F98'}" title="${esc(r.tipoDesligTxt)}">${r.tipoDeslig}</span><div style="font-size:10.5px;color:var(--muted)">${esc(r.motivo)}${r.saida ? ` · ${U.fmtDateBR(r.saida)}` : ''}</div>${aprovadoDesligado(r) ? '<div style="font-size:10.5px;color:var(--critical);font-weight:700">aprovado na avaliação</div>' : ''}${r.reposicao ? '<div style="font-size:10.5px;color:var(--p1);font-weight:700" title="' + esc(r.reposicao.id) + ' · ' + esc(r.reposicao.cargo || '') + '">vaga de reposição em ' + U.fmtDateBR(r.reposicao.abertura) + ' (' + r.reposicao.dias + 'd depois)</div>' : ''}` : '<span style="color:var(--muted)">—</span>'}</td></tr>`).join('')}</tbody></table></div>`;
     };
     desenhar();
     body.querySelector('#natal-ano').addEventListener('change', e => { estado.ano = Number(e.target.value); render(body, f); });
