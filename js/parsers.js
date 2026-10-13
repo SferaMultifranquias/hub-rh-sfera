@@ -157,6 +157,14 @@
   }
 
   // ---------------------------------------------------------------------
+  // Motivo de desligamento: a Feedz traz "Questões Pessoas" (erro de digitação)
+  // e variações ("Questão Pessoais", "Questões pessoais") — tudo vira
+  // "Questões Pessoais", para o motivo não aparecer repartido nos indicadores.
+  function corrigirMotivoDesligamento(v) {
+    const s = str(v);
+    return s ? s.replace(/quest(?:ão|ões|ao|oes)\s+pesso(?:ai|a)s/i, 'Questões Pessoais') : s;
+  }
+
   // 1. Colaboradores.xlsx  (aba "Headcount")
   // ---------------------------------------------------------------------
   function parseColaboradores(wb) {
@@ -193,7 +201,7 @@
         origem_cadastro: str(g('Origem do Cadastro')),
         participa_gamificacao: str(g('Participa gamificação')),
         desligamento_tipo: str(g('Desligamento - Tipo')),
-        desligamento_motivo: str(g('Desligamento - Motivo')),
+        desligamento_motivo: corrigirMotivoDesligamento(g('Desligamento - Motivo')),
         ultimo_dia_trabalhado: toISODate(g('Último dia trabalhado')),
         idioma: str(g('Idioma'))
       };
@@ -611,6 +619,6 @@
     parseTwygoUsuarios,
     parseTwygoConteudos,
     parseAveExperiencia,
-    _internal: { normHeader, toISODate, num, str, intOrNull, parseDuracaoTexto }
+    _internal: { corrigirMotivoDesligamento, normHeader, toISODate, num, str, intOrNull, parseDuracaoTexto }
   };
 })();
