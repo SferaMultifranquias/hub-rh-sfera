@@ -258,13 +258,12 @@ where perfil <> 'admin' and coalesce(status, 'ativo') <> 'desligado'
   and (permissoes ->> 'treinamento_dev.turmas_lancar')::boolean is true
   and permissoes ? 'treinamento_dev.turmas';
 
--- Gestores de T&D: troque a lista abaixo pelos nomes das contas (como estão no Cadastro de Acessos).
+-- Gestor de T&D: Rodrigo de Pinho Souza (indicado pelo RH em 14/10/2026). Outros gestores
+-- são ligados depois, conta a conta, no Cadastro de Acessos.
 update public.profiles
 set permissoes = coalesce(permissoes, '{}'::jsonb) || '{"treinamento_dev.turmas_gestor": true}'::jsonb
 where coalesce(status, 'ativo') <> 'desligado'
-  and lower(trim(nome)) in (select lower(trim(x)) from unnest(array[
-    'NOME DO GESTOR 1'
-  ]::text[]) as x);
+  and nome ilike 'rodrigo%pinho%';
 
 -- ----------------------------------------------------------------------------
 -- Conferência
