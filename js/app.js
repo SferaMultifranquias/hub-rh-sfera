@@ -472,6 +472,7 @@
     if (window.HUB_BOLETIM) HUB_BOLETIM.invalidar();
     if (window.HUB_SATISFACAO) HUB_SATISFACAO.invalidar();
     if (window.HUB_FECHAMENTO) HUB_FECHAMENTO.invalidar();
+    if (window.HUB_RECRUIT && HUB_RECRUIT.invalidar) HUB_RECRUIT.invalidar();
     try {
       await HUB_DAL.loadAll((table, i, total, rowsSoFar) => {
         if (showStatus !== false) statusEl.textContent = `Carregando dados... (${i + 1}/${total}: ${table}, ${U.fmtInt(rowsSoFar)} linhas)`;

@@ -65,12 +65,17 @@
   // simultâneos). dal-indicadores.js já pagina (ver PAGE=1000 lá); aqui não
   // paginava — corrigido buscando em blocos de 1000 até a página vir vazia.
   const PAGE = 1000;
-  async function fetchAll(table) {
+  // Paginação com ordem fixa (por id): sem "order", o banco não garante a
+  // mesma ordem entre uma página e outra e podia repetir ou pular linhas.
+  // `filtro` (opcional) recebe a consulta e devolve ela com o filtro aplicado.
+  async function fetchAll(table, colunas, filtro) {
     let all = [];
     let from = 0;
     for (;;) {
+      let q = sb.from(table).select(colunas || '*');
+      if (filtro) q = filtro(q);
       const { data, error } = await withTimeout(
-        sb.from(table).select('*').range(from, from + PAGE - 1),
+        q.order('id', { ascending: true }).range(from, from + PAGE - 1),
         QUERY_TIMEOUT_MS,
         `tempo esgotado buscando "${table}" (conexão lenta ou projeto Supabase inativo)`
       );
@@ -83,18 +88,88 @@
     return all.map(toCamelRow);
   }
 
-  // Recarrega as 3 tabelas operacionais (vagas/candidatos/entrevistas) — é
+  // ---- Só baixar o que mudou (supabase-trafego-recrutamento.sql) ----------
+  // hub_versoes tem um contador por tabela, somado pelo banco a cada
+  // gravação. Tabela com o mesmo contador da última vez não é baixada de
+  // novo; vagas e candidatos, quando mudam, baixam só as linhas alteradas
+  // (hub_alterado_em) + a lista de ids (para tirar as apagadas). Sem o SQL
+  // (hub_versoes não existe), tudo é baixado inteiro como antes.
+  // CACHE guarda a cópia do banco; as telas recebem um .slice() dela — o
+  // "Visualizar como" recorta a cópia das telas, nunca o CACHE.
+  const CACHE = {};                       // tabela → { rows, versao, desde }
+  const RESUMOS = {};                     // destino → linhas (ou null)
+  let resumosChave = null;
+  let ultimaCompleta = 0;
+  const RECARGA_COMPLETA_MS = 30 * 60 * 1000;
+  const TABELAS_DELTA = new Set(['vagas', 'candidatos']);
+  const MARGEM_DELTA_MS = 60 * 1000;      // folga para gravações que terminam durante a leitura
+
+  async function lerVersoes() {
+    try {
+      const { data, error } = await withTimeout(sb.from('hub_versoes').select('tabela, versao, alterado_em'), QUERY_TIMEOUT_MS, 'tempo esgotado lendo as versões');
+      if (error) return null;
+      const m = {};
+      for (const r of data || []) m[r.tabela] = r;
+      return m;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async function atualizarTabela(t, v, completa) {
+    const c = CACHE[t];
+    if (!completa && c && v && c.versao === v.versao) return; // ninguém mexeu
+    if (!completa && c && v && c.desde && TABELAS_DELTA.has(t)) {
+      const desde = new Date(new Date(c.desde).getTime() - MARGEM_DELTA_MS).toISOString();
+      const [novas, ids] = await Promise.all([
+        fetchAll(t, '*', q => q.gt('hub_alterado_em', desde)),
+        fetchAll(t, 'id')
+      ]);
+      const vivos = new Set(ids.map(r => r.id));
+      const porId = new Map(c.rows.filter(r => vivos.has(r.id)).map(r => [r.id, r]));
+      for (const r of novas) porId.set(r.id, r);
+      // Linha que existe no banco mas não veio (ex.: entrou no recorte sem ser
+      // alterada): não dá para remendar — baixa a tabela inteira.
+      if (ids.some(r => !porId.has(r.id))) {
+        CACHE[t] = { rows: await fetchAll(t), versao: v.versao, desde: v.alterado_em };
+        return;
+      }
+      CACHE[t] = { rows: Array.from(porId.values()), versao: v.versao, desde: v.alterado_em };
+      return;
+    }
+    // A versão é lida ANTES de baixar: se alguém gravar durante a leitura, a
+    // próxima recarga vê o contador diferente e busca de novo.
+    CACHE[t] = { rows: await fetchAll(t), versao: v ? v.versao : null, desde: v ? v.alterado_em : null };
+  }
+
+  // Força baixar tudo na próxima recarga ("Atualizar dados").
+  function invalidar() { ultimaCompleta = 0; }
+
+  // Recarrega as tabelas operacionais (vagas/candidatos/entrevistas...) — é
   // isso que faz o indicador de Recrutamento e as telas operacionais
   // refletirem qualquer mudança feita por qualquer pessoa, sem upload.
-  async function reload() {
+  async function reload(opts) {
     const errors = [];
+    const versoes = await lerVersoes();
+    const completa = !versoes || !!(opts && opts.completa) || Date.now() - ultimaCompleta > RECARGA_COMPLETA_MS;
     for (const t of RECRUIT_TABLES) {
-      try { window.HUB_RECRUIT_DATA[t] = await fetchAll(t); }
+      try { await atualizarTabela(t, versoes && versoes[t], completa); }
       catch (err) {
-        if (OPTIONAL_TABLES.has(t) && /does not exist|schema cache|could not find/i.test(err.message || '')) { window.HUB_RECRUIT_DATA[t] = []; continue; }
-        errors.push(`${t}: ${err.message}`);
+        if (OPTIONAL_TABLES.has(t) && /does not exist|schema cache|could not find/i.test(err.message || '')) CACHE[t] = { rows: [] };
+        else errors.push(`${t}: ${err.message}`);
       }
+      window.HUB_RECRUIT_DATA[t] = CACHE[t] ? CACHE[t].rows.slice() : [];
     }
+    if (completa && !errors.length) ultimaCompleta = Date.now();
+    const chave = versoes ? ['controle_desligamento', 'entrevistas_desligamento', 'entrevista_pesquisa'].map(t => (versoes[t] || {}).versao).join('|') : null;
+    if (!completa && chave && chave === resumosChave) {
+      for (const destino of ['controle_desligamento_ind', 'entrevistas_desligamento_ind', 'controle_respostas_forms']) {
+        window.HUB_RECRUIT_DATA[destino] = Array.isArray(RESUMOS[destino]) ? RESUMOS[destino].slice() : RESUMOS[destino];
+      }
+      if (errors.length) throw new Error('Não consegui atualizar os dados do Recrutamento — ' + errors.join('; '));
+      return window.HUB_RECRUIT_DATA;
+    }
+    let resumosOk = true;
     // Resumos da Entrevista de Desligamento para os Indicadores — sem dado
     // pessoal (supabase-links-privacidade.sql): desligamentos do Controle e
     // links de entrevista. Paginado: o PostgREST corta respostas em 1000
@@ -113,12 +188,14 @@
           if (!data || data.length < PAGE) break;
           from += PAGE;
         }
-        window.HUB_RECRUIT_DATA[destino] = all.map(toCamelRow);
+        RESUMOS[destino] = all.map(toCamelRow);
       } catch (err) {
-        window.HUB_RECRUIT_DATA[destino] = null;
-        if (!/does not exist|schema cache|could not find/i.test(err.message || '')) errors.push(fn + ': ' + err.message);
+        RESUMOS[destino] = null;
+        if (!/does not exist|schema cache|could not find/i.test(err.message || '')) { errors.push(fn + ': ' + err.message); resumosOk = false; }
       }
+      window.HUB_RECRUIT_DATA[destino] = Array.isArray(RESUMOS[destino]) ? RESUMOS[destino].slice() : RESUMOS[destino];
     }
+    resumosChave = resumosOk ? chave : null;
     if (errors.length) throw new Error('Não consegui atualizar os dados do Recrutamento — ' + errors.join('; '));
     return window.HUB_RECRUIT_DATA;
   }
@@ -201,7 +278,7 @@
 
   window.HUB_RECRUIT = {
     RECRUIT_TABLES, MASTER_TABLES,
-    reload, reloadMasterLists, activeNames,
+    reload, invalidar, reloadMasterLists, activeNames,
     insertRow, updateRow, deleteRow, upsertMaster,
     logAcao, listHistorico,
     listSolicitacoes, criarSolicitacao, decidirSolicitacao,

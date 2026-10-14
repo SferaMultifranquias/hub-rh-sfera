@@ -46,6 +46,11 @@
   // "matricula" da Feedz é o CELULAR do colaborador — dado pessoal que
   // nenhuma tela usa, então nem desce para o navegador.
   const SELECT_COLUNAS = {
+    // Feedbacks: o texto do feedback e as respostas (~80% do tráfego desta
+    // tabela) não aparecem em nenhuma tela — só quem deu, para quem e quando.
+    feedbacks: 'id,de,para,unidade,departamento,cargo,anonimo,avaliacao,data',
+    // Celebrações: sem a mensagem (nenhuma tela mostra; o código identifica cada uma).
+    celebracoes: 'id,codigo,colaborador_enviou,unidade,departamento,papel,cargo_enviou,colaboradores_receberam,cargo_recebeu,curtidas,comentarios,data',
     colaboradores: 'id,external_id,nome,nome_completo,email,cpf,cargo,cargo_visivel,unidade,departamento,grupos,papel,' +
       'gestor_direto,gestor_email,etnia,sexo,genero,data_nascimento,data_admissao,data_cadastro,situacao,ultimo_acesso,' +
       'origem_cadastro,participa_gamificacao,desligamento_tipo,desligamento_motivo,ultimo_dia_trabalhado,idioma,updated_at',
