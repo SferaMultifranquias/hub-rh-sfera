@@ -203,54 +203,87 @@
     return { id: 'td-twygo', nome: 'Treinamentos na Twygo', fundo: 'conteudo', els, notas };
   }
 
-  function slideParceiras(p, cult) {
-    const { COR, para, titulo, card, fmtInt, fmtPct } = S().pecas;
+  // ------------------------------------------------------------------
+  // T&D — Unibê e Academia Hering, um slide para cada (pedido de 14/10/2026).
+  // As duas planilhas são FOTOS mensais (mês de referência escolhido no upload):
+  // o slide usa a última foto dentro do período. Sem planilha no período, vale o
+  // valor digitado no Boletim da Liderança (Valores manuais).
+  const fT = p => ({ start: p.de, end: p.ate, unidade: [], departamento: [], colaborador: '' });
+  const rotMesCurto = m => (m ? `${S().pecas.MES3[+m.slice(5, 7) - 1].toLowerCase()}/${m.slice(2, 4)}` : '');
+  function ultimoManual(p, cult, id, opId) {
     const ms = mesesDe(p);
-    // Último valor lançado no período (os lançamentos são mensais).
-    const ultimo = (id, opId) => { for (let i = ms.length - 1; i >= 0; i--) { const c = cult.mes(ms[i]); const a = opId ? c.operacoes[opId] : c.empresa; const v = a && a.ind ? a.ind[id] : null; if (v != null) return v; } return null; };
-    const unibe = cult.OPERACOES.map(o => ({ nome: o.nome, v: ultimo('unibe_adesao', o.id) })).filter(o => o.v != null).sort((a, b) => b.v - a.v);
-    const academia = ultimo('academia_pontos', 'hering');
-    // Mesma conta do módulo Treinamentos: média dos PDVs da última foto do período
-    // (planilha 27.1). Sem planilha no período, média das operações digitadas.
-    const ubMod = window.HUB_METRICS_TREINAMENTOS ? HUB_METRICS_TREINAMENTOS.unibeMetrics({ start: p.de, end: p.ate, unidade: [], departamento: [], colaborador: '' }) : null;
-    const daPlanilha = !!(ubMod && ubMod.mes);
-    const unibeMedia = daPlanilha ? ubMod.adesaoMedia : media(unibe.map(o => o.v));
-    const vazio = !unibe.length && academia == null;
-    // Academia Hering: a planilha traz o ACUMULADO de cada pessoa na plataforma. O que
-    // é do período é a diferença entre a última foto do período e a última foto antes dele.
-    const acad = (() => {
-      const rows = (window.HUB_DATA && HUB_DATA.academia_hering) || [];
-      const porMes = {};
-      rows.forEach(r => { const m = String(r.mes).slice(0, 7); if (r.performance == null) return; const x = porMes[m] || (porMes[m] = { s: 0, n: 0 }); x.s += Number(r.performance); x.n++; });
-      const meses = Object.keys(porMes).sort();
-      const fimM = meses.filter(m => m <= p.ate.slice(0, 7) && m >= p.de.slice(0, 7)).pop();
-      const baseM = meses.filter(m => m < p.de.slice(0, 7)).pop();
-      const med = m => (m ? porMes[m].s / porMes[m].n : null);
-      const rot = m => (m ? `${S().pecas.MES3[+m.slice(5, 7) - 1].toLowerCase()}/${m.slice(2, 4)}` : null);
-      return { fim: med(fimM), ganho: fimM && baseM ? med(fimM) - med(baseM) : null, rotFim: rot(fimM), rotBase: rot(baseM) };
-    })();
-    const els = [].concat(
-      titulo('PLATAFORMAS PARCEIRAS — UNIBÊ E ACADEMIA HERING'),
-      { t: 'text', x: 40, y: 76, w: 830, h: 20, size: 11, color: COR.branco, paras: [para(vazio
-        ? 'Sem dados no período. Envie as planilhas 27.1 Unibê e 27.2 Academia Hering em Administração → Upload, com o mês de referência.'
-        : `Foto do último mês com dados em ${p.label.toLowerCase()} (planilhas 27.1 e 27.2).`)] },
-      [card(25, 105, 600, 385)],
-      unibe.length
-        ? { t: 'chart', x: 35, y: 111, w: 580, h: 373, kind: 'bar', fmt: 'pct0', catSize: 9, title: 'UNIBÊ — ADESÃO POR OPERAÇÃO', labels: unibe.map(o => o.nome), series: [{ name: 'Adesão', values: unibe.map(o => o.v), color: 'B45CD6' }] }
-        : { t: 'text', x: 45, y: 120, w: 560, h: 40, size: 11, color: COR.suave, paras: [para('**UNIBÊ** — sem planilha no período.')] },
-      [card(640, 105, 295, 185),
-        { t: 'text', x: 655, y: 115, w: 265, h: 18, size: 10.5, bold: true, color: COR.claro, paras: [para(daPlanilha ? 'UNIBÊ — ADESÃO MÉDIA DOS PDVs' : 'UNIBÊ — MÉDIA DAS OPERAÇÕES')] },
-        { t: 'text', x: 655, y: 140, w: 265, h: 60, size: 40, bold: true, color: 'D99BF0', valign: 'middle', paras: [para(fmtPct(unibeMedia, 1))] },
-        { t: 'text', x: 655, y: 210, w: 265, h: 70, size: 9.5, color: COR.suave, paras: [para(daPlanilha ? `${ubMod.pdvsNaMeta} de ${ubMod.totalPdvs} PDVs na meta de 90%` : 'meta do Boletim: 90%')] }],
-      [card(640, 300, 295, 190),
-        { t: 'text', x: 655, y: 310, w: 265, h: 18, size: 10.5, bold: true, color: COR.claro, paras: [para(acad.ganho != null ? 'ACADEMIA HERING — GANHO NO PERÍODO' : 'ACADEMIA HERING — ACUMULADO')] },
-        { t: 'text', x: 655, y: 335, w: 265, h: 60, size: 40, bold: true, color: COR.amarelo, valign: 'middle', paras: [para(acad.ganho != null ? `${acad.ganho >= 0 ? '+' : '−'}${fmtInt(Math.abs(Math.round(acad.ganho)))}` : (academia == null ? '—' : fmtInt(academia)))] },
-        { t: 'text', x: 655, y: 405, w: 265, h: 70, size: 9.5, color: COR.suave, paras: [para(acad.ganho != null
-          ? `pontos de performance por pessoa entre ${acad.rotBase} e ${acad.rotFim} (média acumulada: ${fmtInt(Math.round(acad.fim))})`
-          : `pontos de performance acumulados por pessoa${acad.rotFim ? ' até ' + acad.rotFim : ''}; o ganho do período aparece quando houver a foto do mês anterior ao período`)] }]
+    for (let i = ms.length - 1; i >= 0; i--) { const c = cult.mes(ms[i]); const a = opId ? c.operacoes[opId] : c.empresa; const v = a && a.ind ? a.ind[id] : null; if (v != null) return v; }
+    return null;
+  }
+
+  function slideUnibe(p, cult) {
+    const { COR, para, titulo, card, kpi, fmtInt, fmtPct } = S().pecas;
+    const T = window.HUB_METRICS_TREINAMENTOS;
+    const u = T ? T.unibeMetrics(fT(p)) : null;
+    const els = [].concat(titulo('UNIBÊ — ADESÃO AOS TREINAMENTOS'));
+    if (!u || !u.mes) {
+      // Sem planilha no período: valores digitados no Boletim, por operação.
+      const ops = cult.OPERACOES.map(o => ({ nome: o.nome, v: ultimoManual(p, cult, 'unibe_adesao', o.id) })).filter(o => o.v != null).sort((a, b) => b.v - a.v);
+      els.push({ t: 'text', x: 40, y: 76, w: 880, h: 28, size: 10.5, color: COR.branco, paras: [para(ops.length
+        ? `Sem a planilha 27.1 em ${p.label.toLowerCase()}: valores digitados no Boletim da Liderança. Média das operações: **${fmtPct(media(ops.map(o => o.v)), 1)}**.`
+        : `Sem dados da Unibê em ${p.label.toLowerCase()}. Envie a planilha 27.1 Unibê em Administração → Upload, com o mês de referência.`)] });
+      if (ops.length) els.push([card(25, 110, 910, 380)], { t: 'chart', x: 35, y: 116, w: 890, h: 368, kind: 'bar', fmt: 'pct0', catSize: 9, title: 'ADESÃO POR OPERAÇÃO', labels: ops.map(o => o.nome), series: [{ name: 'Adesão', values: ops.map(o => o.v), color: 'B45CD6' }] });
+      return { id: 'td-unibe', nome: 'Unibê', fundo: 'conteudo', els: [].concat(...els), notas: 'Sem a planilha 27.1 no período: valores digitados em Boletim da Liderança → Valores manuais.' };
+    }
+    const varPP = u.adesaoAnterior != null ? (u.adesaoMedia - u.adesaoAnterior) * 100 : null;
+    const varTxt = varPP == null ? 'meta: 90%' : `${varPP >= 0 ? '▲' : '▼'} ${Math.abs(varPP).toFixed(1).replace('.', ',')} p.p. vs. ${rotMesCurto(u.mesAnterior)}`;
+    const curtoPdv = s => String(s || '').replace(/^O Botic[aá]rio\s+/i, '').replace(/\s*\(MG\)\s*$/, ' (MG)');
+    const piores = u.porPdv.slice().sort((a, b) => (a.adesao || 0) - (b.adesao || 0)).slice(0, 8);
+    els.push(
+      { t: 'text', x: 40, y: 76, w: 880, h: 20, size: 11, color: COR.branco, paras: [para(`Foto de ${rotMesCurto(u.mes)} (planilha 27.1): adesão média de **${fmtPct(u.adesaoMedia, 1)}** nos ${fmtInt(u.totalPdvs)} PDVs, com **${fmtInt(u.pdvsNaMeta)} na meta de 90%**.`)] },
+      kpi(25, 105, 220, 95, 'ADESÃO MÉDIA DOS PDVs', fmtPct(u.adesaoMedia, 1), varTxt),
+      kpi(255, 105, 220, 95, 'PDVs NA META', `${fmtInt(u.pdvsNaMeta)}/${fmtInt(u.totalPdvs)}`, 'adesão de 90% ou mais'),
+      kpi(485, 105, 220, 95, 'PESSOAS ABAIXO DA META', fmtInt(u.pessoasAbaixo), `${fmtInt(u.pessoasZeradas)} com 0% · de ${fmtInt(u.totalPessoas)} pessoas`, u.pessoasAbaixo ? COR.amarelo : null),
+      kpi(715, 105, 220, 95, 'ADESÃO MÉDIA DAS PESSOAS', fmtPct(u.adesaoPessoas, 1), 'quem está no PDV hoje (aba Pessoa)'),
+      [card(25, 210, 450, 280)],
+      { t: 'chart', x: 35, y: 216, w: 430, h: 268, kind: 'bar', fmt: 'pct0', catSize: 8.5, title: 'ADESÃO POR OPERAÇÃO', labels: u.porOperacao.map(o => o.label), series: [{ name: 'Adesão', values: u.porOperacao.map(o => o.adesao), color: 'B45CD6' }] },
+      [card(485, 210, 450, 280)],
+      { t: 'chart', x: 495, y: 216, w: 430, h: 268, kind: 'bar', fmt: 'pct0', catSize: 8, labelSize: 8, title: 'PDVs COM MENOR ADESÃO', labels: piores.map(x => curtoPdv(x.label)), series: [{ name: 'Adesão', values: piores.map(x => x.adesao), color: 'E8604C' }] }
     );
-    const notas = 'Mesmos números do Boletim da Liderança. Unibê: adesão oficial de cada PDV (aba PDV da planilha 27.1); operação e número em destaque = média dos PDVs, a mesma conta do módulo Treinamentos. Academia Hering: a planilha 27.2 traz o acumulado de cada pessoa na plataforma; o número em destaque é o ganho de pontos por pessoa entre a última foto antes do período e a última do período (sem foto anterior, mostra o acumulado). Usa o último mês do período com planilha; sem planilha no mês, vale o valor digitado em Valores manuais.';
-    return { id: 'td-parceiras', nome: 'Unibê e Academia Hering', fundo: 'conteudo', els, notas };
+    const notas = `Planilha 27.1 Unibê, foto de ${rotMesCurto(u.mes)} (mês de referência escolhido no upload). Adesão do PDV = a oficial da Unibê (aba PDV); média dos PDVs = a mesma conta do módulo Treinamentos e do Boletim da Liderança. A adesão das pessoas (aba Pessoa) considera só quem está no PDV hoje e por isso é diferente da do PDV. Meta: 90%.${u.mesAnterior ? ` Comparação com a foto de ${rotMesCurto(u.mesAnterior)}.` : ''}`;
+    return { id: 'td-unibe', nome: 'Unibê', fundo: 'conteudo', els: [].concat(...els), notas };
+  }
+
+  function slideAcademia(p, cult) {
+    const { COR, para, titulo, card, kpi, fmtInt } = S().pecas;
+    const T = window.HUB_METRICS_TREINAMENTOS;
+    const a = T ? T.academiaMetrics(fT(p)) : null;
+    const h1 = v => (v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1).replace('.', ','));
+    const els = [].concat(titulo('ACADEMIA HERING — DESENVOLVIMENTO DAS EQUIPES'));
+    if (!a || !a.mes) {
+      const manual = ultimoManual(p, cult, 'academia_pontos', 'hering');
+      els.push({ t: 'text', x: 40, y: 76, w: 880, h: 28, size: 10.5, color: COR.branco, paras: [para(manual != null
+        ? `Sem a planilha 27.2 em ${p.label.toLowerCase()}: valor digitado no Boletim da Liderança — **${fmtInt(Math.round(manual))} pontos** de performance média.`
+        : `Sem dados da Academia Hering em ${p.label.toLowerCase()}. Envie a planilha 27.2 Academia Hering em Administração → Upload, com o mês de referência.`)] });
+      return { id: 'td-academia', nome: 'Academia Hering', fundo: 'conteudo', els: [].concat(...els), notas: 'Sem a planilha 27.2 no período: valor digitado em Boletim da Liderança → Valores manuais.' };
+    }
+    // A planilha traz o ACUMULADO de cada pessoa: o ganho do período é a diferença
+    // entre a última foto do período e a última foto antes dele.
+    const rows = (window.HUB_DATA && HUB_DATA.academia_hering) || [];
+    const mediaDe = (m, k) => { const l = rows.filter(r => String(r.mes).slice(0, 7) === m && r[k] != null); return l.length ? l.reduce((s, r) => s + Number(r[k]), 0) / l.length : null; };
+    const base = Array.from(new Set(rows.map(r => String(r.mes).slice(0, 7)))).filter(m => m < p.de.slice(0, 7)).sort().pop();
+    const ganhoPerf = base ? a.performanceMedia - mediaDe(base, 'performance') : null;
+    const ganhoHoras = base ? a.horasMedia - mediaDe(base, 'horas') : null;
+    const sinal = v => `${v >= 0 ? '+' : '−'}`;
+    const lojas = a.porLoja.slice(0, 8);
+    els.push(
+      { t: 'text', x: 40, y: 76, w: 880, h: 28, size: 10.5, color: COR.branco, paras: [para(`Foto de ${rotMesCurto(a.mes)} (planilha 27.2): ${fmtInt(a.totalPessoas)} pessoas em ${fmtInt(a.porLoja.length)} lojas, com **${fmtInt(Math.round(a.performanceMedia))} pontos** e **${h1(a.horasMedia)} h** de treinamento por pessoa (acumulado na plataforma).${ganhoPerf != null ? ` No período, **${sinal(ganhoPerf)}${fmtInt(Math.abs(Math.round(ganhoPerf)))} pontos** por pessoa.` : ''}`)] },
+      kpi(25, 105, 220, 95, 'PERFORMANCE MÉDIA', fmtInt(Math.round(a.performanceMedia)), 'pontos acumulados por pessoa'),
+      kpi(255, 105, 220, 95, 'GANHO NO PERÍODO', ganhoPerf == null ? '—' : `${sinal(ganhoPerf)}${fmtInt(Math.abs(Math.round(ganhoPerf)))}`, ganhoPerf == null ? 'falta a foto anterior ao período' : `pontos por pessoa desde ${rotMesCurto(base)}${ganhoHoras != null ? ` · ${sinal(ganhoHoras)}${h1(Math.abs(ganhoHoras))} h` : ''}`),
+      kpi(485, 105, 220, 95, 'HORAS POR PESSOA', h1(a.horasMedia), `${fmtInt(Math.round(a.horasTotais))} h no total`),
+      kpi(715, 105, 220, 95, `SEM ACESSO HÁ +${a.diasSemAcesso} DIAS`, fmtInt(a.semAcesso), `${fmtInt(a.nuncaAcessou)} nunca acessaram`, a.semAcesso ? COR.amarelo : null),
+      [card(25, 210, 450, 280)],
+      { t: 'chart', x: 35, y: 216, w: 430, h: 268, kind: 'bar', fmt: 'int', catSize: 8.5, title: 'PERFORMANCE MÉDIA POR LOJA', labels: lojas.map(l => l.label), series: [{ name: 'Pontos', values: lojas.map(l => Math.round(l.performanceMedia || 0)), color: 'F2B84B' }] },
+      [card(485, 210, 450, 280)],
+      { t: 'chart', x: 495, y: 216, w: 430, h: 268, kind: 'bar', fmt: 'dec1', catSize: 8.5, title: 'HORAS DE TREINAMENTO POR PESSOA, POR LOJA', labels: lojas.map(l => l.label), series: [{ name: 'Horas por pessoa', values: lojas.map(l => Math.round((l.horasMedia || 0) * 10) / 10), color: '2E75B6' }] }
+    );
+    const notas = `Planilha 27.2 Academia Hering, foto de ${rotMesCurto(a.mes)} (mês de referência escolhido no upload). Horas e performance são o ACUMULADO de cada pessoa na plataforma até a exportação. Ganho no período = média da última foto do período − média da última foto antes do período${base ? ` (${rotMesCurto(base)})` : ' (ainda não há foto anterior)'}. "Sem acesso" conta a partir do acesso mais recente da foto.`;
+    return { id: 'td-academia', nome: 'Academia Hering', fundo: 'conteudo', els: [].concat(...els), notas };
   }
 
   // ------------------------------------------------------------------
@@ -415,7 +448,7 @@
     // Ordem do deck: Cultura (Feedz), Feedbacks, Humor, Pesquisa de Engajamento e Satisfação. Sem base, o slide sai.
     cultura: (p, cult) => [slideCultura(p, cult), cult.feedbacks ? slideFeedbacks(p, cult) : null, cult.humor ? slideHumor(p, cult) : null, slideEngajamento(p, cult), slideSatisfacao(p, cult)].filter(Boolean),
     engajamentoDe,
-    td: (p, cult) => [slideTwygo(p, cult), slideParceiras(p, cult)].concat(slideMultis(p, cult)),
+    td: (p, cult) => [slideTwygo(p, cult), slideUnibe(p, cult), slideAcademia(p, cult)].concat(slideMultis(p, cult)),
     _internal: { mesesDe, mesesAte, valor, pilares, engajamentoDe, twygoDoPeriodo }
   };
 })();

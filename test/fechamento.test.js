@@ -217,7 +217,7 @@ run('slides: Cultura, T&D, slides do RH, textos e resumo', () => {
   const deck = SL.montar(SL.periodo('mensal', 2026, 7), { vagas: [], metas: [], atualizadoEm: '2026-08-05', dho: dhoFalso(), cult: cultFalso(), manuais, textos });
   const ids = deck.map(d => d.id);
   check('cultura e engajamento depois da experiência', ids.indexOf('cult-cultura') === ids.indexOf('dho-experiencia') + 1 && ids.indexOf('cult-engajamento') === ids.indexOf('cult-cultura') + 1, ids.join(','));
-  check('T&D com divisor, Twygo e parceiras', ids.indexOf('td-twygo') === ids.indexOf('td-divisor') + 1 && ids.indexOf('td-parceiras') === ids.indexOf('td-twygo') + 1, ids.join(','));
+  check('T&D com divisor, Twygo, Unibê e Academia Hering (um slide cada)', ids.indexOf('td-twygo') === ids.indexOf('td-divisor') + 1 && ids.indexOf('td-unibe') === ids.indexOf('td-twygo') + 1 && ids.indexOf('td-academia') === ids.indexOf('td-unibe') + 1, ids.join(','));
   check('slide do RH preenchido entra depois da Projeção', ids.indexOf('man-rs-projetos') === ids.indexOf('rs-projecao') + 1, ids.join(','));
   check('slide do RH vazio não entra', !ids.includes('man-rituais'));
   check('slide do RH cujo anterior está vazio volta pela sequência', ids.indexOf('man-dho-proximos') === ids.indexOf('cult-engajamento') + 1, ids.join(','));
@@ -234,7 +234,9 @@ run('slides: Cultura, T&D, slides do RH, textos e resumo', () => {
   check('engajamento: pilar melhor e pior', /Conexão com líder.*mais bem avaliado.*Bem-estar/.test(texto(eng)), texto(eng).slice(0, 300));
   // Sem o módulo Treinamentos carregado não há data de conclusão: o slide avisa, sem números acumulados.
   check('Twygo: sem data de conclusão, avisa em vez de mostrar o acumulado', /Sem a data de conclusão/.test(texto(deck.find(d => d.id === 'td-twygo'))));
-  check('Unibê e Academia Hering pelos valores manuais', /750/.test(texto(deck.find(d => d.id === 'td-parceiras'))));
+  // Sem as planilhas 27.1/27.2 (módulo Treinamentos não carregado no teste): valores digitados no Boletim.
+  check('Unibê pelos valores manuais, com gráfico por operação', /valores digitados no Boletim/.test(texto(deck.find(d => d.id === 'td-unibe'))) && deck.find(d => d.id === 'td-unibe').els.some(e => e.t === 'chart'), texto(deck.find(d => d.id === 'td-unibe')));
+  check('Academia Hering pelo valor manual', /750 pontos/.test(texto(deck.find(d => d.id === 'td-academia'))), texto(deck.find(d => d.id === 'td-academia')));
   const res = texto(deck.find(d => d.id === 'resumo'));
   check('resumo traz turnover, NPS e engajamento (sem o progresso acumulado da Twygo)', /Turnover médio/.test(res) && /NPS de desligamento/.test(res) && /Engajamento na Feedz/.test(res) && !/Progresso na Twygo/.test(res), res);
   check('todo elemento dentro do slide 960 × 540', deck.every(d => d.els.every(e => e.x >= 0 && e.y >= 0 && e.x + e.w <= 960 && e.y + e.h <= 540.5)), deck.filter(d => d.els.some(e => e.x + e.w > 960 || e.y + e.h > 540.5)).map(d => d.id).join(','));
