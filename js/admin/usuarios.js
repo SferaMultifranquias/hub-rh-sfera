@@ -502,9 +502,13 @@
         editingProfile = null;
       } else {
         const senha = document.getElementById('acc-senha').value;
+        // O banco só aceita criar login para e-mail autorizado aqui
+        // (cadastro_autorizado — ver supabase-seguranca-fase1.sql).
+        const { error: autErr } = await sb.from('cadastro_autorizado').upsert({ email: email.trim().toLowerCase(), criado_em: new Date().toISOString() });
+        if (autErr) throw new Error('Não foi possível autorizar o e-mail: ' + autErr.message + (/cadastro_autorizado|schema cache/i.test(autErr.message) ? ' — rode supabase-seguranca-fase1.sql no Supabase.' : ''));
         const iso = window.createIsolatedClient();
         const { data, error } = await iso.auth.signUp({ email, password: senha });
-        if (error) throw error;
+        if (error) throw (/database error saving new user/i.test(error.message || '') ? new Error('O banco recusou criar o login deste e-mail (cadastro não autorizado). Tente de novo; se continuar, confira se o e-mail está certo.') : error);
         if (!data.user) throw new Error('Não foi possível criar o login (verifique se a confirmação de e-mail está desativada no Supabase — veja SETUP.md).');
         await HUB_DAL.upsertProfile(Object.assign({ id: data.user.id, email, nome, perfil, unidades, departamentos, permissoes }, extra));
       }
