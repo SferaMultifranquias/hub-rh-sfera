@@ -51,10 +51,11 @@
       items: [
         { key: 'treinamento_dev.onboarding', label: 'Onboarding' },
         { key: 'treinamento_dev.visita_loja', label: 'Visita em Loja' },
-        // Só T&D e RH (decisão de 09/10/2026): fora do preset Gestor.
-        { key: 'treinamento_dev.turmas', label: 'Turmas e Multiplicadoras (controle das turmas dadas pelas multiplicadoras)' },
-        // Multiplicadora: lança e vê só as próprias turmas (fase 2, 09/10/2026).
-        { key: 'treinamento_dev.turmas_lancar', label: 'Turmas e Multiplicadoras — lançar as próprias turmas (multiplicadora: vê e edita só o que lançou)' }
+        // Três papéis (14/10/2026, supabase-treinamento-turmas-permissoes.sql): RH geral só lê,
+        // gestor de T&D faz tudo, multiplicadora lança e vê só as próprias turmas.
+        { key: 'treinamento_dev.turmas', label: 'Turmas e Multiplicadoras — ver todas as turmas (somente leitura)' },
+        { key: 'treinamento_dev.turmas_gestor', label: 'Turmas e Multiplicadoras — gestor de T&D (vê, edita e exclui todas as turmas, valida justificativas, pede ajustes, altera mês fechado)' },
+        { key: 'treinamento_dev.turmas_lancar', label: 'Turmas e Multiplicadoras — multiplicadora (lança e vê só as próprias turmas; edita até o mês ser fechado; não exclui)' }
       ]
     },
     {
@@ -86,7 +87,9 @@
     rh: ALL_KEYS.filter(k => k !== 'admin.usuarios' && k !== 'admin.log_acessos' &&k !== 'indicadores.controle_desligamento' && k !== 'indicadores.boletim'
       && k !== 'indicadores.desligamento' && k !== 'indicadores.pesquisa_clima' && k !== 'indicadores.engajamento'
       && k !== 'indicadores.satisfacao' && k !== 'indicadores.satisfacao_completo' && k !== 'indicadores.satisfacao_participacao'
-      && k !== 'indicadores.fechamento'),
+      && k !== 'indicadores.fechamento'
+      // Turmas: o RH geral só lê; gestor de T&D e multiplicadora são ligados conta a conta.
+      && k !== 'treinamento_dev.turmas_gestor' && k !== 'treinamento_dev.turmas_lancar'),
     // "Gerar link" da Entrevista de Desligamento e o Controle de Desligamento
     // ficam de fora do preset Gestor de propósito — envolvem dado sensível
     // (CPF/e-mail/celular de ex-colaborador) e devem ser ligados

@@ -154,7 +154,12 @@ run('Divergências e justificativa', () => {
   check('fim antes do início', T.pendencias(com({ hora_inicio: '10:00', hora_fim: '06:00' })).includes('fim antes do início'));
   check('duração diferente do horário', T.pendencias(com({ horas: 3 })).includes('duração diferente do horário'));
   check('sem local, sem instrutor, tema não informado', ['sem local', 'sem instrutor', 'tema não informado'].every(p => T.pendencias(com({ local: null, multiplicadoras: ['Sem instrutor'], tema: 'TEMA NÃO INFORMADO' })).includes(p)));
-  check('a justificar até ter justificativa', T.situacao(com({ presentes: 7 })) === 'justificar' && T.situacao(com({ presentes: 7, justificativa: 'Gerente levou a equipe toda' })) === 'justificada');
+  const just = { presentes: 7, justificativa: 'Gerente levou a equipe toda' };
+  check('a justificar até ter justificativa', T.situacao(com({ presentes: 7 })) === 'justificar' && T.situacao(com(just)) === 'aguardando');
+  check('justificativa aguarda o gestor', T.aguardaGestor(com(Object.assign({ validacao: 'pendente' }, just))) && !T.precisaAcao(com(Object.assign({ validacao: 'pendente' }, just))));
+  check('gestor validou', T.situacao(com(Object.assign({ validacao: 'validada' }, just))) === 'validada');
+  check('gestor devolveu: volta a justificar', T.situacao(com(Object.assign({ validacao: 'devolvida' }, just))) === 'justificar' && T.precisaAcao(com(Object.assign({ validacao: 'devolvida' }, just))));
+  check('ajuste pedido vale mesmo sem divergência', T.situacao(com({ ajuste_pedido: true })) === 'ajuste' && T.precisaAcao(com({ ajuste_pedido: true })));
 });
 
 run('Duração negativa da planilha vira "sem duração"', () => {

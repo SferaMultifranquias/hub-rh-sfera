@@ -106,8 +106,20 @@
     ['sem instrutor', t => (t.multiplicadoras || []).includes('Sem instrutor') || !(t.multiplicadoras || []).length]
   ];
   function pendencias(t) { return PENDENCIAS.filter(([, f]) => f(t)).map(([nome]) => nome); }
-  // 'ok' | 'justificar' | 'justificada'
-  function situacao(t) { return !pendencias(t).length ? 'ok' : (t.justificativa ? 'justificada' : 'justificar'); }
+  // 'ajuste'     o gestor de T&D pediu um ajuste na turma (vale mesmo sem divergência)
+  // 'ok'         sem divergência
+  // 'justificar' divergência sem justificativa, ou justificativa devolvida pelo gestor
+  // 'aguardando' justificada, esperando o gestor validar
+  // 'validada'   justificativa aceita pelo gestor
+  function situacao(t) {
+    if (t.ajuste_pedido) return 'ajuste';
+    if (!pendencias(t).length) return 'ok';
+    if (!t.justificativa || t.validacao === 'devolvida') return 'justificar';
+    return t.validacao === 'validada' ? 'validada' : 'aguardando';
+  }
+  // O que a multiplicadora precisa resolver (aviso no menu) e o que o gestor precisa validar.
+  const precisaAcao = t => ['ajuste', 'justificar'].includes(situacao(t));
+  const aguardaGestor = t => situacao(t) === 'aguardando';
 
   // Tudo o que a tela e o slide usam, para um período e filtros.
   function painel(turmas, f, colaboradores) {
@@ -129,5 +141,5 @@
     };
   }
 
-  window.HUB_METRICS_TURMAS = { filtrar, resumo, agrupar, porMes, painel, coberturaIntegracao, marcaDaUnidade, umAnoAntes, pendencias, situacao, PENDENCIAS: PENDENCIAS.map(p => p[0]) };
+  window.HUB_METRICS_TURMAS = { filtrar, resumo, agrupar, porMes, painel, coberturaIntegracao, marcaDaUnidade, umAnoAntes, pendencias, situacao, precisaAcao, aguardaGestor, PENDENCIAS: PENDENCIAS.map(p => p[0]) };
 })();

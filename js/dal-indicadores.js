@@ -183,8 +183,26 @@
     await salvarTreinamento('treinamento_turma_excluir', { p_id: id }, 'supabase-treinamento-turmas.sql');
     await recarregarTurmas();
   }
+  // Gestor de T&D: validar / devolver a justificativa, pedir / cancelar ajuste.
+  async function gestaoTurmaHub(id, acao, comentario, usuario) {
+    await salvarTreinamento('treinamento_turma_gestao', { p_id: id, p_acao: acao, p_comentario: comentario || null, p_usuario: usuario }, 'supabase-treinamento-turmas-permissoes.sql');
+    await recarregarTurmas();
+  }
+  // Meses fechados no Fechamento do Período ('AAAA-MM'): a multiplicadora não edita turmas deles.
+  // Sem o SQL novo, devolve lista vazia (nada travado na tela; o banco continua mandando).
+  async function mesesFechadosTurmas() {
+    const { data, error } = await sb.rpc('treinamento_meses_fechados');
+    return error ? [] : (data || []);
+  }
+  // Histórico de alterações de uma turma (só o gestor lê).
+  async function historicoTurma(id) {
+    const { data, error } = await sb.from('treinamento_turmas_log').select('*').eq('turma_id', id).order('quando', { ascending: false });
+    if (error) throw new Error('Histórico indisponível: ' + error.message);
+    return data || [];
+  }
   async function recarregarTurmas() {
     window.HUB_DATA.treinamento_turmas = await fetchAll('treinamento_turmas');
+    if (window.HUB_TURMAS_AVISO) window.HUB_TURMAS_AVISO();
   }
 
   async function listProfiles() {
@@ -243,7 +261,7 @@
   }
 
   window.HUB_DAL = {
-    TABLES, loadAll, replaceTable, salvarUnibe, salvarAcademia, salvarTurmas, salvarTurmaHub, justificarTurmaHub, excluirTurmaHub, recarregarTurmas, logUpload, listUploadLog, listProfiles, upsertProfile, deleteProfile, setProfileStatus,
+    TABLES, loadAll, replaceTable, salvarUnibe, salvarAcademia, salvarTurmas, salvarTurmaHub, justificarTurmaHub, excluirTurmaHub, gestaoTurmaHub, mesesFechadosTurmas, historicoTurma, recarregarTurmas, logUpload, listUploadLog, listProfiles, upsertProfile, deleteProfile, setProfileStatus,
     logViewAsStart, logViewAsEnd, listViewAsLog
   };
 })();

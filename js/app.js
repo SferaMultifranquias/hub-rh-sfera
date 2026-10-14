@@ -36,7 +36,7 @@
     'rec-agenda': 'recrutamento.agenda', 'rec-banco-talentos': 'recrutamento.banco_talentos',
     'rec-aprovacoes': 'recrutamento.aprovacoes', 'rec-historico': 'recrutamento.historico',
     'rec-transferencia': 'recrutamento.transferencia', 'rec-parecer-gestor': 'recrutamento.parecer_gestor',
-    'tre-onboarding': 'treinamento_dev.onboarding', 'tre-visita-loja': 'treinamento_dev.visita_loja', 'tre-turmas': ['treinamento_dev.turmas', 'treinamento_dev.turmas_lancar'],
+    'tre-onboarding': 'treinamento_dev.onboarding', 'tre-visita-loja': 'treinamento_dev.visita_loja', 'tre-turmas': ['treinamento_dev.turmas', 'treinamento_dev.turmas_gestor', 'treinamento_dev.turmas_lancar'],
     'adm-upload': 'admin.upload', 'adm-cadastros': 'admin.cadastros_recrutamento', 'adm-usuarios': 'admin.usuarios', 'adm-log-acessos': 'admin.log_acessos'
   };
 
@@ -485,6 +485,8 @@
     }
     try { await HUB_RECRUIT.reloadMasterLists(); } catch (err) { /* listas mestre do Recrutamento são opcionais no primeiro carregamento */ }
     populateFilterOptions();
+    // Turmas e Multiplicadoras: número de pendências no item do menu.
+    if (window.HUB_TURMAS_AVISO) HUB_TURMAS_AVISO();
     renderCurrentSection();
   }
   window.HUB_RELOAD_DATA = reloadData;

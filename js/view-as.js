@@ -135,7 +135,8 @@
     for (const [tabela, perm] of Object.entries(SO_PERMISSAO)) {
       if (!window.HUB_DATA || !Array.isArray(window.HUB_DATA[tabela])) continue;
       savedHubData[tabela] = window.HUB_DATA[tabela];
-      const temPerm = simUser.perfil === 'admin' || !!(simUser.permissoes && simUser.permissoes[perm] === true);
+      const temPerm = simUser.perfil === 'admin' || !!(simUser.permissoes && (simUser.permissoes[perm] === true
+        || (tabela === 'treinamento_turmas' && simUser.permissoes['treinamento_dev.turmas_gestor'] === true)));
       if (temPerm) continue;
       // Turmas: a multiplicadora (só "lançar") vê as que ela mesma lançou — mesma regra da policy.
       const lanca = tabela === 'treinamento_turmas' && !!(simUser.permissoes && simUser.permissoes['treinamento_dev.turmas_lancar'] === true);
