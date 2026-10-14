@@ -4,8 +4,10 @@
 //
 //   Horas de treinamento = soma da duração das turmas (esforço da multiplicadora).
 //   Horas entregues      = duração × presentes (campo horasPessoa).
-//   Aderência            = presentes ÷ convocados (campo presenca); numa turma com mais presentes
-//                          que convocados (erro de lançamento), conta no máximo 100%.
+//   Aderência            = presentes ÷ convocados (campo presenca). Pode passar de 100%:
+//                          o RH quer ver quando veio mais gente que o convocado (e o motivo,
+//                          na justificativa da multiplicadora).
+//   Pendências           = divergências do lançamento (ver PENDENCIAS); a multiplicadora justifica.
 //   Turma em dupla conta uma vez no total e entra na linha de cada multiplicadora.
 (function () {
   const U = HUB_UTILS;
@@ -26,15 +28,15 @@
   }
 
   function resumo(lista) {
-    let horas = 0, horasPessoa = 0, presentes = 0, convocados = 0, presOk = 0;
+    let horas = 0, horasPessoa = 0, presentes = 0, convocados = 0, presComConv = 0;
     const multis = new Set();
     for (const t of lista) {
       const h = Number(t.horas) || 0, p = Number(t.presentes) || 0, c = Number(t.convocados) || 0;
       horas += h; horasPessoa += h * p; presentes += p;
-      if (t.convocados != null && t.presentes != null) { convocados += c; presOk += Math.min(p, c); }
+      if (t.convocados != null && t.presentes != null) { convocados += c; presComConv += p; }
       (t.multiplicadoras || []).forEach(m => multis.add(m));
     }
-    return { turmas: lista.length, horas, horasPessoa, presentes, convocados, presenca: convocados ? presOk / convocados : null, multiplicadoras: multis.size };
+    return { turmas: lista.length, horas, horasPessoa, presentes, convocados, presenca: convocados ? presComConv / convocados : null, multiplicadoras: multis.size };
   }
 
   // Agrupa por uma ou várias chaves por turma (marcas, multiplicadoras).
@@ -61,6 +63,7 @@
     if (k.startsWith('hering')) return 'Hering';
     if (k.startsWith('levi')) return "Levi's";
     if (k.startsWith('escritorio')) return 'Sfera';
+    if (k.startsWith('boticario vd')) return 'O Boticário VD';
     if (k.startsWith('boticario') || k.startsWith('quem disse')) return 'O Boticário';
     return null;
   }
@@ -88,6 +91,24 @@
       .sort((a, b) => b.admitidos - a.admitidos);
   }
 
+  // Divergências de um lançamento. Não são corrigidas pelo RH: ficam marcadas na
+  // lista e a multiplicadora escreve a justificativa (campo justificativa).
+  const minutos = h => (/^\d{1,2}:\d{2}$/.test(h || '') ? +h.slice(0, h.indexOf(':')) * 60 + +h.slice(h.indexOf(':') + 1) : null);
+  const PENDENCIAS = [
+    ['presentes acima dos convocados', t => t.presentes != null && t.convocados != null && t.presentes > t.convocados],
+    ['sem convocados ou presentes', t => t.presentes == null || t.convocados == null],
+    ['sem horário de início ou fim', t => !t.hora_inicio || !t.hora_fim],
+    ['fim antes do início', t => minutos(t.hora_inicio) != null && minutos(t.hora_fim) != null && minutos(t.hora_fim) <= minutos(t.hora_inicio)],
+    ['sem duração', t => !(Number(t.horas) > 0)],
+    ['duração diferente do horário', t => Number(t.horas) > 0 && minutos(t.hora_inicio) != null && minutos(t.hora_fim) > minutos(t.hora_inicio) && Math.abs(Number(t.horas) - (minutos(t.hora_fim) - minutos(t.hora_inicio)) / 60) > 0.05],
+    ['sem local', t => !t.local],
+    ['tema não informado', t => t.tema === 'TEMA NÃO INFORMADO'],
+    ['sem instrutor', t => (t.multiplicadoras || []).includes('Sem instrutor') || !(t.multiplicadoras || []).length]
+  ];
+  function pendencias(t) { return PENDENCIAS.filter(([, f]) => f(t)).map(([nome]) => nome); }
+  // 'ok' | 'justificar' | 'justificada'
+  function situacao(t) { return !pendencias(t).length ? 'ok' : (t.justificativa ? 'justificada' : 'justificar'); }
+
   // Tudo o que a tela e o slide usam, para um período e filtros.
   function painel(turmas, f, colaboradores) {
     const lista = filtrar(turmas, f);
@@ -103,10 +124,10 @@
       porCanal: agrupar(lista, t => t.canal),
       porModalidade: agrupar(lista, t => t.modalidade),
       cobertura: coberturaIntegracao(lista, colaboradores, f.de, f.ate),
-      comAlerta: lista.filter(t => (t.alertas || []).length),
+      comPendencia: lista.filter(t => pendencias(t).length),
       planilhas: Array.from(new Set((turmas || []).map(t => t.planilha))).sort()
     };
   }
 
-  window.HUB_METRICS_TURMAS = { filtrar, resumo, agrupar, porMes, painel, coberturaIntegracao, marcaDaUnidade, umAnoAntes };
+  window.HUB_METRICS_TURMAS = { filtrar, resumo, agrupar, porMes, painel, coberturaIntegracao, marcaDaUnidade, umAnoAntes, pendencias, situacao, PENDENCIAS: PENDENCIAS.map(p => p[0]) };
 })();

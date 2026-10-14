@@ -232,11 +232,11 @@ run('slides: Cultura, T&D, slides do RH, textos e resumo', () => {
   check('cultura: celebrações e engajamento da empresa', /CELEBRAÇÕES DE GESTORES \| 20/.test(texto(cult)) && /ENGAJAMENTO NA FEEDZ \| 80%/.test(texto(cult)), texto(cult).slice(0, 400));
   const eng = deck.find(d => d.id === 'cult-engajamento');
   check('engajamento: pilar melhor e pior', /Conexão com líder.*mais bem avaliado.*Bem-estar/.test(texto(eng)), texto(eng).slice(0, 300));
-  const tw = deck.find(d => d.id === 'td-twygo').els.filter(e => e.t === 'chart');
-  check('Twygo: maior e menor progresso por loja', tw[1].labels[0] === 'Rio Sul' && tw[2].labels[0] === 'Centro', JSON.stringify(tw.map(c => c.labels)));
+  // Sem o módulo Treinamentos carregado não há data de conclusão: o slide avisa, sem números acumulados.
+  check('Twygo: sem data de conclusão, avisa em vez de mostrar o acumulado', /Sem a data de conclusão/.test(texto(deck.find(d => d.id === 'td-twygo'))));
   check('Unibê e Academia Hering pelos valores manuais', /750/.test(texto(deck.find(d => d.id === 'td-parceiras'))));
   const res = texto(deck.find(d => d.id === 'resumo'));
-  check('resumo traz turnover, NPS, engajamento e Twygo', /Turnover médio/.test(res) && /NPS de desligamento/.test(res) && /Engajamento na Feedz/.test(res) && /Progresso na Twygo \| 70%/.test(res), res);
+  check('resumo traz turnover, NPS e engajamento (sem o progresso acumulado da Twygo)', /Turnover médio/.test(res) && /NPS de desligamento/.test(res) && /Engajamento na Feedz/.test(res) && !/Progresso na Twygo/.test(res), res);
   check('todo elemento dentro do slide 960 × 540', deck.every(d => d.els.every(e => e.x >= 0 && e.y >= 0 && e.x + e.w <= 960 && e.y + e.h <= 540.5)), deck.filter(d => d.els.some(e => e.x + e.w > 960 || e.y + e.h > 540.5)).map(d => d.id).join(','));
 });
 

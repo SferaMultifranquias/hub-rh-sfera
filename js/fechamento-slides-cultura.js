@@ -147,35 +147,60 @@
   }
 
   // ------------------------------------------------------------------
-  // T&D — Twygo (foto do último mês do período) e valores manuais.
+  // T&D — Twygo DO PERÍODO: cursos concluídos pela data da conclusão e as
+  // inscrições feitas no período. O progresso médio de todas as inscrições é uma
+  // foto acumulada da plataforma (fica no Boletim e no módulo Treinamentos), não do período.
+  function twygoDoPeriodo(p) {
+    const T = window.HUB_METRICS_TREINAMENTOS;
+    if (!T) return null;
+    const f = de => ({ start: de[0], end: de[1], unidade: [], departamento: [] });
+    const hist = T.twygoHistorico(f([p.de, p.ate]));
+    if (!hist.temDatas) return { hist };
+    const umAno = d => `${+d.slice(0, 4) - 1}${d.slice(4)}`;
+    const ant = T.twygoHistorico(f([umAno(p.de), umAno(p.ate)]));
+    // Inscrições feitas no período (ambiente ativo, confirmadas): quantas já chegaram a 100%.
+    const ops = T.twygoPorOperacao(f([p.de, p.ate]));
+    let insc = 0, ok = 0;
+    Object.values(ops).forEach(o => { insc += o.inscricoes; ok += o.conclusao * o.inscricoes; });
+    // Até que dia vai a base da Twygo no Hub (data mais recente do export). Se for antes
+    // do fim do período, o período está incompleto e a comparação com o ano anterior engana.
+    let ultima = '';
+    ((window.HUB_DATA && HUB_DATA.twygo_participantes) || []).forEach(r => {
+      [r.concluido_em, r.aprovado_em, r.data_inscricao, r.ultimo_acesso].forEach(d => { if (d && String(d).slice(0, 10) > ultima) ultima = String(d).slice(0, 10); });
+    });
+    return { hist, ant, insc, taxaInsc: insc ? ok / insc : null, ultima: ultima || null, incompleto: !!ultima && ultima < p.ate };
+  }
+
   function slideTwygo(p, cult) {
     const { COR, para, titulo, card, fmtInt, fmtPct } = S().pecas;
-    const ult = `${p.ano}-${pad(p.m2)}`;
-    const c = cult.mes(ult);
-    const geral = c.empresa.ind.twygo_progresso, pessoas = c.empresa.base && c.empresa.base.twygo_pessoas;
-    const ops = cult.OPERACOES.map(o => ({ nome: o.nome, v: c.operacoes[o.id] && c.operacoes[o.id].ind.twygo_progresso })).filter(o => o.v != null).sort((a, b) => b.v - a.v);
-    const lojas = [];
-    cult.OPERACOES.forEach(o => ((c.operacoes[o.id] || {}).lojas || []).forEach(l => {
-      if (!l.apoio && l.ind && l.ind.twygo_progresso != null && l.base && l.base.twygo_pessoas >= 3) lojas.push({ nome: l.nome || l.departamento, v: l.ind.twygo_progresso });
-    }));
-    lojas.sort((a, b) => b.v - a.v);
-    const top = lojas.slice(0, 10), fundo = lojas.slice(-10).reverse();
-    // Cursos concluídos no período, pela data da conclusão (histórico da planilha 27).
-    const hist = window.HUB_METRICS_TREINAMENTOS ? HUB_METRICS_TREINAMENTOS.twygoHistorico({ start: p.de, end: p.ate, unidade: [], departamento: [] }) : null;
-    const feitos = hist && hist.temDatas && hist.conclusoes ? ` No período, **${fmtInt(hist.conclusoes)} cursos concluídos** (${fmtInt(Math.round(hist.horas))} h de carga horária, ${fmtInt(hist.pessoas)} pessoas).` : '';
-
-    const els = [].concat(
-      titulo('STATUS DE TREINAMENTOS — TWYGO'),
-      { t: 'text', x: 40, y: 76, w: 830, h: 20, size: 11, color: COR.branco, paras: [para(`Progresso médio nas trilhas da Twygo em ${S().MESES[p.m2 - 1].toLowerCase()} ${p.ano}: **${fmtPct(geral)}**${pessoas ? ` entre ${fmtInt(pessoas)} colaboradores` : ''}.${feitos}`)] },
+    const MB = window.HUB_METRICS_BOLETIM;
+    const tw = twygoDoPeriodo(p);
+    const h = tw && tw.hist;
+    const els = [].concat(titulo('TREINAMENTOS NA TWYGO — ' + p.label.toUpperCase()));
+    if (!h || !h.temDatas) {
+      els.push({ t: 'text', x: 40, y: 76, w: 830, h: 40, size: 11, color: COR.branco, paras: [para('Sem a data de conclusão dos cursos: envie a planilha 27. Twygo atualizada em Administração → Upload de Planilhas.')] });
+      return { id: 'td-twygo', nome: 'Treinamentos na Twygo', fundo: 'conteudo', els, notas: 'Cursos concluídos no período, pela coluna Conclusão 100% da planilha 27.' };
+    }
+    const a = tw.ant;
+    const vs = a && a.conclusoes && !tw.incompleto ? ` (${h.conclusoes >= a.conclusoes ? '+' : '−'}${fmtPct(Math.abs(h.conclusoes - a.conclusoes) / a.conclusoes)} vs. ${p.ano - 1})` : '';
+    const inscTxt = tw.insc ? ` Das **${fmtInt(tw.insc)} inscrições** feitas no período, **${fmtPct(tw.taxaInsc)}** já foram concluídas.` : '';
+    const aviso = tw.incompleto ? ` **Atenção: a base da Twygo no Hub vai só até ${tw.ultima.split('-').reverse().join('/')}** — reenvie a planilha 27. Twygo atualizada para fechar o período.` : '';
+    const ops = h.porOperacao.filter(o => o.id).slice().sort((x, y) => y.conclusoes - x.conclusoes);
+    const nomeLoja = d => (MB && MB.nomeCurto ? MB.nomeCurto(d.label) : d.label);
+    const lojas = h.porDepartamento.filter(d => d.label && !(MB && MB.ehApoio && d.op && MB.ehApoio(d.label, d.op))).slice(0, 10);
+    const cursos = h.porCurso.slice(0, 10);
+    const curto = s => (String(s).length > 42 ? String(s).slice(0, 40) + '…' : s);
+    els.push(
+      { t: 'text', x: 40, y: 74, w: 880, h: 28, size: 10.5, color: COR.branco, paras: [para(`Em ${p.label.toLowerCase()}, **${fmtInt(h.conclusoes)} cursos concluídos**${vs}, somando ${fmtInt(Math.round(h.horas))} h de carga horária, por ${fmtInt(h.pessoas)} pessoas.${inscTxt}${aviso}`)] },
       [card(25, 105, 300, 385)],
-      { t: 'chart', x: 35, y: 111, w: 280, h: 373, kind: 'bar', fmt: 'pct0', catSize: 8.5, title: 'POR OPERAÇÃO', labels: ops.map(o => o.nome), series: [{ name: 'Progresso', values: ops.map(o => o.v), color: '2E75B6' }] },
+      { t: 'chart', x: 35, y: 111, w: 280, h: 373, kind: 'bar', fmt: 'int', catSize: 8.5, title: 'CURSOS CONCLUÍDOS POR OPERAÇÃO', labels: ops.map(o => o.label), series: [{ name: 'Concluídos', values: ops.map(o => o.conclusoes), color: '2E75B6' }] },
       [card(335, 105, 295, 385)],
-      { t: 'chart', x: 345, y: 111, w: 275, h: 373, kind: 'bar', fmt: 'pct0', catSize: 8, labelSize: 8, title: 'TOP 10 — MAIOR PROGRESSO', labels: top.map(l => l.nome), series: [{ name: 'Progresso', values: top.map(l => l.v), color: '2EC4A0' }] },
+      { t: 'chart', x: 345, y: 111, w: 275, h: 373, kind: 'bar', fmt: 'int', catSize: 8, labelSize: 8, title: 'LOJAS E ÁREAS QUE MAIS CONCLUÍRAM', labels: lojas.map(nomeLoja), series: [{ name: 'Concluídos', values: lojas.map(d => d.conclusoes), color: '2EC4A0' }] },
       [card(640, 105, 295, 385)],
-      { t: 'chart', x: 650, y: 111, w: 275, h: 373, kind: 'bar', fmt: 'pct0', catSize: 8, labelSize: 8, title: 'TOP 10 — MENOR PROGRESSO', labels: fundo.map(l => l.nome), series: [{ name: 'Progresso', values: fundo.map(l => l.v), color: 'E8604C' }] }
+      { t: 'chart', x: 650, y: 111, w: 275, h: 373, kind: 'bar', fmt: 'int', catSize: 7.5, labelSize: 8, title: 'CURSOS MAIS CONCLUÍDOS', labels: cursos.map(c => curto(c.label)), series: [{ name: 'Concluídos', values: cursos.map(c => c.conclusoes), color: 'F2B84B' }] }
     );
-    const notas = 'Mesma conta do Boletim da Liderança: progresso médio das inscrições da Twygo (planilha 27). É uma foto do último upload, não um histórico mês a mês. Cursos concluídos: inscrições confirmadas que chegaram a 100% dentro do período (coluna Conclusão 100%), inclusive de quem já saiu. Lojas: só as com 3 ou mais colaboradores inscritos, sem as áreas de apoio.';
-    return { id: 'td-twygo', nome: 'Status de Treinamentos — Twygo', fundo: 'conteudo', els, notas };
+    const notas = `Planilha 27. Twygo. Cursos concluídos = inscrições confirmadas que chegaram a 100% dentro do período (coluna "Conclusão 100%"; sem ela, a data de aprovação), inclusive de quem já saiu da empresa. Horas = carga horária desses cursos. Inscrições do período = confirmadas, de quem está ativo na Twygo, feitas no período. Comparação com o mesmo período de ${p.ano - 1}. O progresso médio de todas as inscrições (foto acumulada da plataforma) fica no Boletim da Liderança e no módulo Treinamentos.`;
+    return { id: 'td-twygo', nome: 'Treinamentos na Twygo', fundo: 'conteudo', els, notas };
   }
 
   function slideParceiras(p, cult) {
@@ -191,6 +216,19 @@
     const daPlanilha = !!(ubMod && ubMod.mes);
     const unibeMedia = daPlanilha ? ubMod.adesaoMedia : media(unibe.map(o => o.v));
     const vazio = !unibe.length && academia == null;
+    // Academia Hering: a planilha traz o ACUMULADO de cada pessoa na plataforma. O que
+    // é do período é a diferença entre a última foto do período e a última foto antes dele.
+    const acad = (() => {
+      const rows = (window.HUB_DATA && HUB_DATA.academia_hering) || [];
+      const porMes = {};
+      rows.forEach(r => { const m = String(r.mes).slice(0, 7); if (r.performance == null) return; const x = porMes[m] || (porMes[m] = { s: 0, n: 0 }); x.s += Number(r.performance); x.n++; });
+      const meses = Object.keys(porMes).sort();
+      const fimM = meses.filter(m => m <= p.ate.slice(0, 7) && m >= p.de.slice(0, 7)).pop();
+      const baseM = meses.filter(m => m < p.de.slice(0, 7)).pop();
+      const med = m => (m ? porMes[m].s / porMes[m].n : null);
+      const rot = m => (m ? `${S().pecas.MES3[+m.slice(5, 7) - 1].toLowerCase()}/${m.slice(2, 4)}` : null);
+      return { fim: med(fimM), ganho: fimM && baseM ? med(fimM) - med(baseM) : null, rotFim: rot(fimM), rotBase: rot(baseM) };
+    })();
     const els = [].concat(
       titulo('PLATAFORMAS PARCEIRAS — UNIBÊ E ACADEMIA HERING'),
       { t: 'text', x: 40, y: 76, w: 830, h: 20, size: 11, color: COR.branco, paras: [para(vazio
@@ -205,11 +243,13 @@
         { t: 'text', x: 655, y: 140, w: 265, h: 60, size: 40, bold: true, color: 'D99BF0', valign: 'middle', paras: [para(fmtPct(unibeMedia, 1))] },
         { t: 'text', x: 655, y: 210, w: 265, h: 70, size: 9.5, color: COR.suave, paras: [para(daPlanilha ? `${ubMod.pdvsNaMeta} de ${ubMod.totalPdvs} PDVs na meta de 90%` : 'meta do Boletim: 90%')] }],
       [card(640, 300, 295, 190),
-        { t: 'text', x: 655, y: 310, w: 265, h: 18, size: 10.5, bold: true, color: COR.claro, paras: [para('ACADEMIA HERING')] },
-        { t: 'text', x: 655, y: 335, w: 265, h: 60, size: 40, bold: true, color: COR.amarelo, valign: 'middle', paras: [para(academia == null ? '—' : fmtInt(academia))] },
-        { t: 'text', x: 655, y: 405, w: 265, h: 70, size: 9.5, color: COR.suave, paras: [para('pontos de performance (média das pessoas)')] }]
+        { t: 'text', x: 655, y: 310, w: 265, h: 18, size: 10.5, bold: true, color: COR.claro, paras: [para(acad.ganho != null ? 'ACADEMIA HERING — GANHO NO PERÍODO' : 'ACADEMIA HERING — ACUMULADO')] },
+        { t: 'text', x: 655, y: 335, w: 265, h: 60, size: 40, bold: true, color: COR.amarelo, valign: 'middle', paras: [para(acad.ganho != null ? `${acad.ganho >= 0 ? '+' : '−'}${fmtInt(Math.abs(Math.round(acad.ganho)))}` : (academia == null ? '—' : fmtInt(academia)))] },
+        { t: 'text', x: 655, y: 405, w: 265, h: 70, size: 9.5, color: COR.suave, paras: [para(acad.ganho != null
+          ? `pontos de performance por pessoa entre ${acad.rotBase} e ${acad.rotFim} (média acumulada: ${fmtInt(Math.round(acad.fim))})`
+          : `pontos de performance acumulados por pessoa${acad.rotFim ? ' até ' + acad.rotFim : ''}; o ganho do período aparece quando houver a foto do mês anterior ao período`)] }]
     );
-    const notas = 'Mesmos números do Boletim da Liderança. Unibê: adesão oficial de cada PDV (aba PDV da planilha 27.1); operação e número em destaque = média dos PDVs, a mesma conta do módulo Treinamentos. Academia Hering: performance média das pessoas (planilha 27.2). Usa o último mês do período com planilha; sem planilha no mês, vale o valor digitado em Valores manuais.';
+    const notas = 'Mesmos números do Boletim da Liderança. Unibê: adesão oficial de cada PDV (aba PDV da planilha 27.1); operação e número em destaque = média dos PDVs, a mesma conta do módulo Treinamentos. Academia Hering: a planilha 27.2 traz o acumulado de cada pessoa na plataforma; o número em destaque é o ganho de pontos por pessoa entre a última foto antes do período e a última do período (sem foto anterior, mostra o acumulado). Usa o último mês do período com planilha; sem planilha no mês, vale o valor digitado em Valores manuais.';
     return { id: 'td-parceiras', nome: 'Unibê e Academia Hering', fundo: 'conteudo', els, notas };
   }
 
@@ -376,6 +416,6 @@
     cultura: (p, cult) => [slideCultura(p, cult), cult.feedbacks ? slideFeedbacks(p, cult) : null, cult.humor ? slideHumor(p, cult) : null, slideEngajamento(p, cult), slideSatisfacao(p, cult)].filter(Boolean),
     engajamentoDe,
     td: (p, cult) => [slideTwygo(p, cult), slideParceiras(p, cult)].concat(slideMultis(p, cult)),
-    _internal: { mesesDe, mesesAte, valor, pilares, engajamentoDe }
+    _internal: { mesesDe, mesesAte, valor, pilares, engajamentoDe, twygoDoPeriodo }
   };
 })();

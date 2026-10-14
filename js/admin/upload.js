@@ -14,9 +14,6 @@
     // Unibê e Academia Hering: foto do dia da exportação, sem data — quem envia
     // escolhe o mês de referência (campo mes) e só aquele mês é substituído.
     { key: 'unibe', table: 'unibe_pdv', label: '27.1. Unibê', file: '27.1.Unibe.xlsx (abas PDV e Pessoa)', icon: '&#127891;', mes: true, custom: importarUnibe },
-    // Turmas das multiplicadoras: uma planilha por multiplicadora; cada arquivo
-    // substitui só as turmas dela (supabase-treinamento-turmas.sql).
-    { key: 'turmas', table: 'treinamento_turmas', label: 'Controle de Treinamentos (multiplicadoras)', file: 'Controle Treinamento_[nome da multiplicadora].xlsx (uma por vez)', icon: '&#127891;', custom: importarTurmas },
     { key: 'academia', table: 'academia_hering', label: '27.2. Academia Hering', file: '27.2.Academia Hering.xlsx', icon: '&#127891;', mes: true, custom: importarAcademia },
     { key: 'ave45', table: 'avaliacao_experiencia_45', label: '28. Avaliação da Experiência — 45 dias', file: 'AVE 45 DIAS.xlsx', icon: '&#128221;', parse: wb => P.parseAveExperiencia(wb, 45) },
     { key: 'ave90', table: 'avaliacao_experiencia_90', label: '28.1. Avaliação da Experiência — 90 dias', file: 'AVE 90 DIAS.xlsx', icon: '&#128221;', parse: wb => P.parseAveExperiencia(wb, 90) },
@@ -173,17 +170,6 @@
     return {
       linhas: r.linhas.length, avisos: r.avisos.concat(fechado ? [fechado] : []),
       resumo: `Academia Hering de ${mesRotulo(mes)}: ${U.fmtInt(r.resumo.pessoas)} pessoas em ${r.resumo.lojas} lojas, ${U.fmtInt(Math.round(r.resumo.horas))} horas de treinamento, performance média de ${U.fmtInt(Math.round(r.resumo.performanceMedia))} pontos; ${U.fmtInt(r.resumo.noCadastro)} achadas no cadastro de Colaboradores.`
-    };
-  }
-
-  async function importarTurmas(wb, setStatus, mes, arquivo) {
-    const r = HUB_PARSERS_TURMAS.parse(wb, { existentes: HUB_DATA.treinamento_turmas || [] });
-    setStatus(`Gravando ${r.turmas.length} turmas de ${r.planilha}...`);
-    await HUB_DAL.salvarTurmas(r.planilha, arquivo, r.turmas);
-    const br = d => d.split('-').reverse().join('/');
-    return {
-      linhas: r.turmas.length, avisos: r.avisos,
-      resumo: `Planilha de ${r.planilha} (aba "${r.aba}"): ${r.turmas.length} turmas de ${br(r.resumo.de)} a ${br(r.resumo.ate)}, ${U.fmtInt(Math.round(r.resumo.horas))} horas e ${U.fmtInt(r.resumo.presentes)} presentes. As turmas anteriores desta planilha foram substituídas; as das outras multiplicadoras e as lançadas no Hub continuam.`
     };
   }
 

@@ -84,10 +84,11 @@
       const eng = C.valor(cult, ms, 'engajamento_feedz');
       const pe = C.engajamentoDe(cult, p.de, p.ate);
       const nota = pe ? pe.nota : C.valor(cult, ms, 'pesquisa_nota');
-      const tw = cult.mes(ms[ms.length - 1]).empresa.ind.twygo_progresso;
+      // T&D do período: cursos concluídos na Twygo (não o progresso acumulado da plataforma).
+      const tw = C.twygoDoPeriodo ? C.twygoDoPeriodo(p) : null;
       tiles.push({ bloco: 'CULTURA', rotulo: 'Engajamento na Feedz', valor: fmtPct(eng), sub: 'índice do Boletim da Liderança' });
       tiles.push({ bloco: 'CULTURA', rotulo: 'Pesquisa de Engajamento', valor: nota == null ? '—' : nota.toFixed(1).replace('.', ',') + ' / 5', sub: 'nota média' });
-      tiles.push({ bloco: 'T&D', rotulo: 'Progresso na Twygo', valor: fmtPct(tw), sub: 'foto do último mês' });
+      if (tw && tw.hist && tw.hist.temDatas) tiles.push({ bloco: 'T&D', rotulo: 'Cursos concluídos na Twygo', valor: fmtInt(tw.hist.conclusoes), sub: `${fmtInt(Math.round(tw.hist.horas))} h · ${fmtInt(tw.hist.pessoas)} pessoas no período` });
     }
     const els = [].concat(
       titulo(`RESUMO EXECUTIVO — ${p.label.toUpperCase()}`),

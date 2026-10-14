@@ -96,14 +96,14 @@ run('Contas', () => {
   check('turmas do período', p.total.turmas === 4);
   check('horas = soma das durações', perto(p.total.horas, 8 + 4 + 3 + 4.5));
   check('horas × pessoa = duração × presentes', perto(p.total.horasPessoa, 8 * 2 + 4 * 12 + 3 * 2 + 4.5 * 5));
-  check('presença limita a turma com mais presentes que convocados', perto(p.total.presenca, (2 + 10 + 2 + 5) / (3 + 10 + 2 + 5)));
+  check('aderência passa de 100% quando vieram mais pessoas que as convocadas (sem teto)', perto(p.total.presenca, (2 + 12 + 2 + 5) / (3 + 10 + 2 + 5)));
   check('ano anterior (set/2025)', p.anterior && p.anterior.turmas === 1 && p.anterior.horas === 8);
   const multis = Object.fromEntries(p.porMultiplicadora.map(x => [x.label, x]));
   check('turma em dupla entra para as duas', multis[ANA].turmas === 4 && multis[BIA].turmas === 1);
   check('marca: turma de duas marcas entra em cada', p.porMarca.some(x => x.label === 'O Boticário' && x.turmas === 1) && p.porMarca.some(x => x.label === 'Sfera' && x.turmas === 1));
   const her = p.cobertura.find(x => x.marca === 'Hering');
   check('cobertura da integração: presentes ÷ admitidos no período', her && her.integrados === 2 && her.admitidos === 2 && her.cobertura === 1, JSON.stringify(her));
-  check('alertas listados', p.comAlerta.length === 2);
+  check('divergências listadas (presentes acima e duração ≠ horário)', p.comPendencia.length === 2, p.comPendencia.map(t => T.pendencias(t).join('+')).join(' | '));
   const ano = T.painel(turmas, { de: '2026-09-01', ate: '2026-09-30', multiplicadora: BIA }, []);
   check('filtro de multiplicadora', ano.total.turmas === 1);
   const comAnt = T.painel(turmas, { de: '2026-01-01', ate: '2026-12-31' }, []);
@@ -120,6 +120,46 @@ run('Slide do Fechamento', () => {
   check('texto de abertura com turmas e horas', /4 turmas/.test(textos) && /19,5 h de treinamento/.test(textos), textos.slice(0, 200));
   const sem = ctx.HUB_FECHAMENTO_CULTURA.td(p, Object.assign({}, cult, { turmas: [] }));
   check('sem turmas no Hub, o slide não entra', !sem.some(s => s.id === 'td-multis'));
+});
+
+run('Grafias das planilhas do Boticário', () => {
+  const X = P._internal;
+  const pub = ['Liderança', 'Liderados | Liderança', 'liderança| liderados', 'Liderança/Liderados', 'liderados e liderança', 'Lideraados', 'Liderandos', 'LLiderados', 'Revendedores', 'Equipe'].map(X.publico);
+  check('público', pub.join('|') === 'Líderes|Líderes e liderados|Líderes e liderados|Líderes e liderados|Líderes e liderados|Liderados|Liderados|Liderados|Revendedores|Liderados', pub.join('|'));
+  const can = ['LOJA', 'VD', 'LOJA| VD', 'VD + LOJA', 'Escritório/Loja'].map(X.canal);
+  check('canal', can.join('|') === 'Loja|VD|Loja e VD|Loja e VD|Loja e Escritório', can.join('|'));
+  const mar = ['OBoticário', 'O  Boticário', 'O Boticário VD', 'Quem Disse Berenenice', 'QDB'].map(v => X.marcas(v).join(','));
+  check('marca (O Boticário VD é marca própria)', mar.join('|') === 'O Boticário|O Boticário|O Boticário VD|Quem disse, Berenice?|Quem disse, Berenice?', mar.join('|'));
+  check('modalidade', ['Híbrido', 'Hibrido', 'Online', 'presencial'].map(X.modalidade).join('|') === 'Híbrido|Híbrido|Online|Presencial');
+});
+
+run('Coluna "Instrutor", nome curto e datas erradas', () => {
+  const cab = ['Data', 'Mês de Ref.:', 'Tema', 'Modalidade', 'Local', 'Início', 'Fim', 'Volume de horas', 'Alvo', 'Origem', 'Marca', 'Canal', 'Convocados', 'Presentes', 'Taxa de Adesão', 'Instrutor'];
+  const lin = (data, conv) => [d(data), '', 'CICLO 14', 'Online', 'Teams', '09:00', '10:00', '01:00', 'Liderados', '', 'O Boticário VD', 'VD', conv, conv, '', 'Myllena'];
+  const tx = l => l.map(v => (v instanceof Date ? v.toISOString().slice(0, 10).split('-').reverse().join('/') : String(v)));
+  const linhas = [lin('2026-09-02', 10), lin('2029-09-30', 5), lin('2001-09-01', 3)];
+  const ws = { matriz: [cab].concat(linhas), texto: [cab].concat(linhas.map(tx)) };
+  const r = P.parse({ SheetNames: ['Controle de Treinamentos'], Sheets: { 'Controle de Treinamentos': ws } }, { arquivo: 'Controle Treinamento_ Myllena Figueiredo.xlsx', hoje: '2026-10-14' });
+  check('lê a coluna Instrutor e completa o nome pelo arquivo', r.planilha === 'Myllena Figueiredo' && r.turmas[0].multiplicadoras.join() === 'Myllena Figueiredo', r.planilha);
+  check('datas no futuro e antes de 2020 ficam de fora', r.turmas.length === 1 && r.avisos.some(a => /fora do esperado/.test(a) && /30\/09\/2029/.test(a) && /01\/09\/2001/.test(a)), r.avisos.join(' | '));
+  check('canal VD e marca O Boticário VD', r.turmas[0].canal === 'VD' && r.turmas[0].marcas.join() === 'O Boticário VD');
+});
+
+run('Divergências e justificativa', () => {
+  const base = { data: '2026-10-01', tema: 'INTEGRAÇÃO', hora_inicio: '10:00', hora_fim: '12:00', horas: 2, convocados: 5, presentes: 5, local: 'Sala', multiplicadoras: ['X'] };
+  const com = extra => Object.assign({}, base, extra);
+  check('turma completa não tem divergência', T.pendencias(base).length === 0 && T.situacao(base) === 'ok');
+  check('mais presentes que convocados', T.pendencias(com({ presentes: 7 })).includes('presentes acima dos convocados'));
+  check('sem horário de fim e sem duração', ['sem horário de início ou fim', 'sem duração'].every(p => T.pendencias(com({ hora_fim: null, horas: null })).includes(p)));
+  check('fim antes do início', T.pendencias(com({ hora_inicio: '10:00', hora_fim: '06:00' })).includes('fim antes do início'));
+  check('duração diferente do horário', T.pendencias(com({ horas: 3 })).includes('duração diferente do horário'));
+  check('sem local, sem instrutor, tema não informado', ['sem local', 'sem instrutor', 'tema não informado'].every(p => T.pendencias(com({ local: null, multiplicadoras: ['Sem instrutor'], tema: 'TEMA NÃO INFORMADO' })).includes(p)));
+  check('a justificar até ter justificativa', T.situacao(com({ presentes: 7 })) === 'justificar' && T.situacao(com({ presentes: 7, justificativa: 'Gerente levou a equipe toda' })) === 'justificada');
+});
+
+run('Duração negativa da planilha vira "sem duração"', () => {
+  const X = P._internal;
+  check('volume "-5:53" não vira horas negativas', X.duracao('-5:53') == null || !(X.duracao('-5:53') > 0) );
 });
 
 console.log(`\n${pass} ok, ${fail} falha(s)`);

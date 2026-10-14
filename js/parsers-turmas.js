@@ -10,21 +10,24 @@
 (function () {
   const I = HUB_PARSERS._internal;
   const N = s => HUB_UTILS.normalizeText(s == null ? '' : s);
-  const COLUNAS = ['Data', 'Tema', 'Convocados', 'Presentes', 'Multiplicador(a)'];
+  const COLUNAS = ['Data', 'Tema', 'Convocados', 'Presentes'];
+  // A coluna de quem deu a turma: "Multiplicador(a)" (Levi's/Hering) ou "Instrutor" (Boticário).
+  const COL_MULTI = ['Multiplicador(a)', 'Multiplicadora', 'Multiplicador', 'Instrutor', 'Instrutora', 'Instrutor(a)'];
 
   // ------------------------------------------------------------------
   // Padronização
   // ------------------------------------------------------------------
+  // Comparação sem espaços: "OBoticário", "O  Boticario". "O Boticário VD" é marca própria (decisão de 14/10/2026).
   const MARCAS = [
     [/^levi'?s$|^levis$/, "Levi's"], [/^hering$/, 'Hering'], [/^sfera$/, 'Sfera'],
-    [/^(o )?boticario$|^boti$/, 'O Boticário'], [/^quem disse,? berenice\??$|^qdb$/, 'Quem disse, Berenice?']
+    [/^o?boticariovd$/, 'O Boticário VD'], [/^o?boticario$|^boti$/, 'O Boticário'], [/^quemdisse,?beren\w*\??$|^qdb$/, 'Quem disse, Berenice?']
   ];
   function marcas(v) {
     // Sem vírgula: "Quem disse, Berenice?" é uma marca só.
-    const partes = String(v || '').split(/\s*(?:\/|&|\+|\be\b)\s*/i).map(s => s.trim()).filter(Boolean);
+    const partes = String(v || '').split(/\s*(?:\/|&|\+|\||\be\b)\s*/i).map(s => s.trim()).filter(Boolean);
     const out = [];
     for (const p of partes) {
-      const k = N(p).replace(/[’`]/g, "'");
+      const k = N(p).replace(/[’`]/g, "'").replace(/\s+/g, '');
       const m = MARCAS.find(([re]) => re.test(k));
       const nome = m ? m[1] : p;
       if (!out.includes(nome)) out.push(nome);
@@ -32,21 +35,34 @@
     return out;
   }
 
+  // Liderados | Líderes | Líderes e liderados | Revendedores. Aceita as grafias das
+  // planilhas: "Liderança", "Liderados | Liderança", "Lideraados", "Liderandos", "Equipe"...
   function publico(v) {
     const k = N(v);
     if (!k) return null;
-    // "Líderes e liderados", "Líder/Liderados", "Líderes & Liderados": turma com os dois.
-    if (/lider(es)?\s*(e|&|\/|\+)\s*liderad/.test(k) || /^ambos$/.test(k)) return 'Líderes e liderados';
-    if (/^lider(es)?$/.test(k)) return 'Líderes';
-    if (/^lider/.test(k)) return 'Liderados';      // liderado, liderados, liderdados
+    if (/^ambos$/.test(k)) return 'Líderes e liderados';
+    if (/revendedor/.test(k)) return 'Revendedores';
+    const semLider = k.replace(/liderancas?/g, ' ').replace(/\blider(es)?\b/g, ' ');
+    const temLider = semLider !== k;
+    const temLiderado = /l+id\w*d\w*|equipe/.test(semLider);
+    if (temLider && temLiderado) return 'Líderes e liderados';
+    if (temLider) return 'Líderes';
+    if (temLiderado) return 'Liderados';
     return String(v).trim();
   }
 
+  // Loja | VD | Escritório e as combinações ("LOJA| VD", "Escritório/Loja").
   function canal(v) {
     const k = N(v);
     if (!k) return null;
-    const loja = /loja/.test(k), esc = /escritorio/.test(k);
-    return loja && esc ? 'Loja e Escritório' : loja ? 'Loja' : esc ? 'Escritório' : String(v).trim();
+    const partes = [/loja/.test(k) && 'Loja', /\bvd\b/.test(k) && 'VD', /escritorio/.test(k) && 'Escritório'].filter(Boolean);
+    return partes.length ? partes.join(' e ') : String(v).trim();
+  }
+
+  function modalidade(v) {
+    const k = N(v);
+    if (!k) return null;
+    return /hibrid/.test(k) ? 'Híbrido' : /on-?line|remot/.test(k) ? 'Online' : /presencial/.test(k) ? 'Presencial' : String(v).trim();
   }
 
   // Erros de digitação já vistos nos temas.
@@ -59,9 +75,12 @@
   // Tipo de turma, pelo tema.
   function categoria(t) {
     const k = N(t);
-    if (/integra|onboarding/.test(k)) return 'Integração e onboarding';
+    if (/integra|onboarding|boas[ -]?vindas|cultura sfera/.test(k)) return 'Integração e onboarding';
     if (/lideranca|comportament|feedback|comunicacao/.test(k)) return 'Liderança e comportamento';
-    if (/produto|colecao|jornada|peak|marca|conversao|venda|live in|treinamento/.test(k)) return 'Produto e vendas';
+    // Reunião/encontro de ciclo (lançamento do ciclo comercial do Boticário), com as grafias
+    // erradas das planilhas ("ENCOTRO", "CILO", "C05"). Se trouxer treinamento junto, conta como produto.
+    if (/ciclo|\bcilo\b|\bc\d{2}\b/.test(k) && !/treinamento/.test(k)) return 'Encontro de ciclo';
+    if (/produto|colecao|jornada|peak|marca|conversao|venda|live in|treinamento|skin|make|botik|botileza|servico|perfumaria|cabelo|beautybox|categorias|iaf|pratica|tecnologia|\bume\b/.test(k)) return 'Produto e vendas';
     return 'Outros';
   }
 
@@ -105,7 +124,7 @@
       const matriz = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
       // Texto formatado ("10:00", "08:00"): horário lido como Date sai deslocado no SheetJS.
       const texto = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-      const iCab = matriz.findIndex(l => COLUNAS.every(c => l.some(x => N(x) === N(c))));
+      const iCab = matriz.findIndex(l => COLUNAS.every(c => l.some(x => N(x) === N(c))) && COL_MULTI.some(c => l.some(x => N(x) === N(c))));
       if (iCab < 0) continue;
       const cab = matriz[iCab].map(x => String(x).trim());
       const linhas = matriz.slice(iCab + 1).map((l, i) => ({ l, t: texto[iCab + 1 + i] || [], n: iCab + i + 2 })).filter(x => x.l.some(v => v !== '' && v != null));
@@ -113,7 +132,7 @@
       // Prefere a aba visível; entre iguais, a com mais linhas.
       if (!melhor || (melhor.oculta && !cand.oculta) || (melhor.oculta === cand.oculta && cand.linhas.length > melhor.linhas.length)) melhor = cand;
     }
-    if (!melhor) throw new Error('Não encontrei a aba de controle de treinamentos (colunas ' + COLUNAS.join(', ') + ').');
+    if (!melhor) throw new Error('Não encontrei a aba de controle de treinamentos (colunas ' + COLUNAS.join(', ') + ' e Multiplicador(a) ou Instrutor).');
     return melhor;
   }
 
@@ -127,37 +146,70 @@
     const avisos = [];
     const turmas = [];
     let semData = 0;
+    const foraDoPrazo = [];
+    const hoje = opts.hoje || new Date().toISOString().slice(0, 10);
+    // Data só com o dia ("09.") e o mês por extenso em "Mês de Ref." ("Setembro"),
+    // como na planilha da Anna: ano corrente, ou o anterior se o mês ainda não chegou.
+    const MESES = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const hojeRef = opts.hoje || new Date().toISOString().slice(0, 10);
+    function dataDaLinha(l) {
+      const v = col(l, 'Data');
+      const soDia = String(v).trim().match(/^(\d{1,2})\.?$/);
+      const mesRef = N(col(l, 'Mês de Ref.:', 'Mês Ref.:', 'Mês de Ref.', 'Mês Ref.', 'Mês'));
+      const mes = MESES.findIndex(m => mesRef.startsWith(m.slice(0, 3)));
+      if (soDia && mes >= 0) {
+        let ano = +hojeRef.slice(0, 4);
+        if (mes + 1 > +hojeRef.slice(5, 7)) ano--;
+        return `${ano}-${String(mes + 1).padStart(2, '0')}-${soDia[1].padStart(2, '0')}`;
+      }
+      return I.toISODate(v);
+    }
     for (const { l, t: lt, n } of aba.linhas) {
-      const data = I.toISODate(col(l, 'Data'));
+      const data = dataDaLinha(l);
       const t = tema(col(l, 'Tema'));
       if (!t && !data) continue;
       if (!data) { semData++; continue; }
+      // Data digitada errada (ex.: 2029, 2001): fica de fora e vira aviso.
+      if (data > hoje || data < '2020-01-01') { foraDoPrazo.push(`linha ${n} (${data.split('-').reverse().join('/')})`); continue; }
       const hi = hora(col(lt, 'Início', 'Inicio') || col(l, 'Início', 'Inicio')), hf = hora(col(lt, 'Fim') || col(l, 'Fim'));
       const volTexto = String(col(lt, 'Volume de horas', 'Volume de Horas')).trim();
       let horas = /^\d+:\d{2}/.test(volTexto) ? duracao(volTexto) : duracao(col(l, 'Volume de horas', 'Volume de Horas'));
       const pelaAgenda = hi && hf ? (minutos(hf) - minutos(hi)) / 60 : null;
       if (horas == null && pelaAgenda > 0) horas = pelaAgenda;
+      // "####" do Excel (hora negativa, fim em branco): vira "sem duração", nunca horas negativas.
+      const durInvalida = horas != null && !(horas > 0);
+      if (durInvalida) horas = null;
       const conv = inteiro(col(l, 'Convocados')), pres = inteiro(col(l, 'Presentes'));
       const alertas = [];
       if (conv != null && pres != null && pres > conv) alertas.push(`presentes (${pres}) maior que convocados (${conv})`);
       if (horas != null && pelaAgenda > 0 && Math.abs(horas - pelaAgenda) > 0.05) alertas.push(`volume de horas (${horas.toFixed(2).replace('.', ',')} h) diferente do horário (${pelaAgenda.toFixed(2).replace('.', ',')} h)`);
       if (conv == null || pres == null) alertas.push('sem convocados ou presentes');
+      if (durInvalida) alertas.push('duração negativa ou zerada (horário de fim em branco?)');
       const marcaOrig = I.str(col(l, 'Marca')) || I.str(col(l, 'Origem'));
       const ms = marcas(marcaOrig);
       if (!ms.length) alertas.push('sem marca');
-      const multisOrig = I.str(col(l, 'Multiplicador(a)', 'Multiplicadora', 'Multiplicador'));
+      const multisOrig = I.str(col(l, ...COL_MULTI));
       const multis = multiplicadoras(multisOrig);
       if (!multis.length) alertas.push('sem multiplicadora');
       turmas.push({
         linha: n, data, tema: t, tema_original: I.str(col(l, 'Tema')), categoria: categoria(t),
-        modalidade: I.str(col(l, 'Modalidade')), local: local(col(l, 'Local', 'Local do Treinamento')),
+        modalidade: modalidade(col(l, 'Modalidade')), local: local(col(l, 'Local', 'Local do Treinamento')),
         hora_inicio: hi, hora_fim: hf, horas: horas == null ? null : Math.round(horas * 100) / 100,
         publico: publico(col(l, 'Alvo', 'Público')), marcas: ms, marca_original: marcaOrig,
         canal: canal(col(l, 'Canal')), convocados: conv, presentes: pres,
         multiplicadoras: multis, multiplicador_original: multisOrig, alertas
       });
     }
-    if (!turmas.length) throw new Error('A planilha não tem turmas com data.');
+    if (!turmas.length) throw new Error('A planilha não tem turmas com data válida' + (foraDoPrazo.length ? ` (datas fora do esperado: ${foraDoPrazo.slice(0, 5).join(', ')})` : '') + '.');
+
+    // Nome curto da instrutora ("Myllena", "Anna") vira o nome completo do arquivo
+    // ("Controle Treinamento_ Myllena Figueiredo.xlsx"), se o primeiro nome bater.
+    const doArquivo = String(opts.arquivo || '').replace(/\.[^.]+$/, '').replace(/\(\d+\)\s*$/, '').split('_').slice(1).join(' ').replace(/\s+/g, ' ').trim();
+    if (doArquivo) {
+      const ta = N(doArquivo).split(' ');
+      const expandir = m => { const tm = N(m).split(' '); return tm.length < ta.length && tm[0] === ta[0] && tm.every(x => ta.includes(x)) ? doArquivo : m; };
+      turmas.forEach(t => { t.multiplicadoras = t.multiplicadoras.map(expandir).filter((v, i, a) => a.indexOf(v) === i); });
+    }
 
     // Dona da planilha: a multiplicadora que mais aparece nas turmas.
     const conta = new Map();
@@ -175,6 +227,7 @@
     const comAlerta = turmas.filter(t => t.alertas.length);
     if (comAlerta.length) avisos.push(`${comAlerta.length} turma(s) com inconsistência: ` + comAlerta.slice(0, 8).map(t => `linha ${t.linha} (${t.alertas.join('; ')})`).join(' · ') + (comAlerta.length > 8 ? ' ...' : '') + '.');
     if (semData) avisos.push(`${semData} linha(s) sem data ficaram de fora.`);
+    if (foraDoPrazo.length) avisos.push(`${foraDoPrazo.length} linha(s) com data fora do esperado (no futuro ou antes de 2020) ficaram de fora — corrija na planilha: ${foraDoPrazo.slice(0, 8).join(', ')}${foraDoPrazo.length > 8 ? ' ...' : ''}.`);
     const ajustadas = turmas.filter(t => t.tema !== String(t.tema_original || '').trim().toUpperCase().replace(/\s+/g, ' ')).length;
     if (ajustadas) avisos.push(`${ajustadas} tema(s) com erro de digitação corrigido(s) (ex.: "NTEGRAÇÃO" → "INTEGRAÇÃO").`);
 
@@ -185,5 +238,5 @@
     };
   }
 
-  window.HUB_PARSERS_TURMAS = { parse, _internal: { marcas, publico, canal, tema, categoria, local, multiplicadoras, hora, duracao } };
+  window.HUB_PARSERS_TURMAS = { parse, _internal: { marcas, publico, canal, modalidade, tema, categoria, local, multiplicadoras, hora, duracao } };
 })();

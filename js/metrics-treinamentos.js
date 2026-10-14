@@ -210,11 +210,15 @@
     const porCurso = agrupar(doPeriodo, 'content_title', () => null)
       .map(g => ({ label: g.label, conclusoes: g.n, horas: soma(g.lista, 'carga_horaria') }))
       .sort((a, b) => b.conclusoes - a.conclusoes);
+    // Por loja/área (departamento do Twygo), com a operação do Boletim para o nome curto.
+    const porDepartamento = agrupar(doPeriodo, 'departamento', () => null)
+      .map(g => ({ label: g.label, op: operacao(g.lista[0].unidade, g.label), conclusoes: g.n, horas: soma(g.lista, 'carga_horaria'), pessoas: new Set(g.lista.map(r => N(r.email || r.nome_completo))).size }))
+      .sort((a, b) => b.conclusoes - a.conclusoes);
     return {
       temDatas, serie, conclusoes: doPeriodo.length, horas, pessoas: pessoas.size,
       horasPorPessoa: pessoas.size ? horas / pessoas.size : null,
       janela: !f.start && !f.end && serie.length ? `${serie[0].label} a ${serie[serie.length - 1].label}` : null,
-      porOperacao, porCurso
+      porOperacao, porCurso, porDepartamento
     };
   }
 

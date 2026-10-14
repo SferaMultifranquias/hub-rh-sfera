@@ -17,7 +17,7 @@
 
   const hoje = new Date();
   const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-  const state = { aba: null, de: `${hoje.getFullYear()}-01`, ate: mesAtual, multiplicadora: '', marca: '', categoria: '', mostrarTodas: false, busca: '', origem: '' };
+  const state = { aba: null, de: `${hoje.getFullYear()}-01`, ate: mesAtual, multiplicadora: '', marca: '', categoria: '', mostrarTodas: false, busca: '', pendencia: '' };
   const podeTudo = () => HUB_PERMISSIONS.hasPerm(HUB_USER, 'treinamento_dev.turmas');
   const podeLancar = () => podeTudo() || HUB_PERMISSIONS.hasPerm(HUB_USER, 'treinamento_dev.turmas_lancar');
 
@@ -57,18 +57,18 @@
   // Quadro do fim da página: de onde vem e como é calculado cada número.
   function explicacao(f) {
     const itens = [
-      ['De onde vêm os dados', 'Das planilhas "Controle de Treinamentos" de cada multiplicadora, enviadas em Administração → Upload de Planilhas. Cada linha da planilha é uma turma. Só entram turmas com data; o período escolhido no topo filtra pela data da turma.'],
+      ['De onde vêm os dados', 'Dos lançamentos das multiplicadoras na aba Lançamentos (desde 14/10/2026). O histórico até outubro/2026 veio das planilhas "Controle de Treinamentos" de cada multiplicadora e das abas antigas do time (2024–2025) e também virou lançamento. O período escolhido no topo filtra pela data da turma.'],
       ['Turmas', 'Quantidade de turmas realizadas no período. Turma dada por duas multiplicadoras conta uma vez no total.'],
       ['Horas de treinamento', 'Soma da duração das turmas (coluna "Volume de horas"). Mostra o tempo que as multiplicadoras passaram em sala — o esforço de quem treina, sem importar quantas pessoas estavam presentes.'],
       ['Horas entregues', 'Duração da turma × presentes, somado no período. Mostra quanto treinamento chegou às pessoas. Exemplo: uma integração de 8 h com 2 presentes entrega 16 h; um treinamento de 4 h com 16 presentes entrega 64 h. Por isso muitas turmas pequenas podem entregar menos horas que poucas turmas grandes.'],
-      ['Presentes', 'Soma dos presentes de todas as turmas. Uma pessoa que fez duas turmas conta duas vezes (a planilha não traz nomes).'],
-      ['Aderência', 'Presentes ÷ convocados (a "Taxa de Adesão" da planilha). Numa turma lançada com mais presentes que convocados, conta no máximo 100% (a turma aparece em "Para conferir nas planilhas").'],
+      ['Presentes', 'Soma dos presentes de todas as turmas. Uma pessoa que fez duas turmas conta duas vezes (o lançamento não traz nomes).'],
+      ['Aderência', 'Presentes ÷ convocados. Pode passar de 100% quando vieram mais pessoas que as convocadas — a turma fica marcada para a multiplicadora justificar o motivo.'],
       ['Setas ▲ ▼', 'Comparação com o mesmo período do ano anterior: ' + `${dataBR(T.umAnoAntes(f.de))} a ${dataBR(T.umAnoAntes(f.ate))}` + '. Verde subiu, vermelho caiu.'],
       ['Gráfico "Por mês"', 'Barras azuis (eixo da esquerda) = horas entregues no mês. Linha verde (eixo da direita) = número de turmas no mês. Linha alta com barra baixa = muitas turmas pequenas; barra alta = treinamento com muita gente no mês. Passe o mouse para ver os dois números.'],
-      ['Por multiplicadora, marca, tipo, público e canal', 'As mesmas contas separadas por grupo. Turma em dupla entra na linha de cada multiplicadora; turma de mais de uma marca (ex.: "Sfera/Boti") entra em cada marca — por isso a soma das linhas pode passar do total. O tipo sai do tema: integração/onboarding, liderança e comportamento, produto e vendas.'],
-      ['Cobertura da integração', 'Estimativa: presentes nas turmas de integração ÷ admitidos no período (cadastro de Colaboradores), por marca. Sfera = Escritório. Não é exata: sem a lista de quem participou, não dá para cruzar pessoa a pessoa; a integração pode cair no mês seguinte à admissão; e há turmas com revendedores. Marca sem planilha de multiplicadora no Hub aparece com cobertura baixa.'],
-      ['Gráfico "Temas"', 'Horas entregues por tema no período, do maior para o menor. Os temas com erro de digitação são corrigidos na importação (ex.: "NTEGRAÇÃO" → "INTEGRAÇÃO").'],
-      ['Turmas e "Para conferir nas planilhas"', 'A lista de turmas do período, da mais recente para a mais antiga. Em amarelo, as que têm algo a corrigir na planilha da multiplicadora: presentes maior que convocados, volume de horas diferente do horário, falta de marca, multiplicadora ou quantidades.']
+      ['Por multiplicadora, marca, tipo, público e canal', 'As mesmas contas separadas por grupo. Turma em dupla entra na linha de cada multiplicadora; turma de mais de uma marca (ex.: "Sfera/Boti") entra em cada marca — por isso a soma das linhas pode passar do total. O tipo sai do tema: integração/onboarding, liderança e comportamento, encontro de ciclo (reunião de lançamento do ciclo, sem treinamento junto), produto e vendas.'],
+      ['Cobertura da integração', 'Estimativa: presentes nas turmas de integração ÷ admitidos no período (cadastro de Colaboradores), por marca. Sfera = Escritório. Não é exata: sem a lista de quem participou, não dá para cruzar pessoa a pessoa; a integração pode cair no mês seguinte à admissão; e há turmas com revendedores. Marca cujas multiplicadoras não lançam no Hub aparece com cobertura baixa.'],
+      ['Gráfico "Temas"', 'Horas entregues por tema no período, do maior para o menor.'],
+      ['Turmas e "Divergências"', 'A lista de turmas do período, da mais recente para a mais antiga. Em amarelo, as que têm divergência: mais presentes que convocados, falta de horário, duração, presentes, local, tema ou instrutor, ou duração diferente do horário. O quadro Divergências mostra cada uma com a justificativa da multiplicadora (ou "a justificar"); a justificativa é escrita na aba Lançamentos.'],
     ];
     return `<dl style="margin:0;display:grid;grid-template-columns:minmax(160px,230px) 1fr;gap:10px 18px;font-size:12.5px;line-height:1.5">
       ${itens.map(([t, x]) => `<dt style="font-weight:700">${esc(t)}</dt><dd style="margin:0;color:var(--muted)">${esc(x)}</dd>`).join('')}
@@ -103,13 +103,13 @@
     const cats = Array.from(new Set(todas.map(x => x.categoria).filter(Boolean))).sort();
     const ultimaImportacao = todas.map(x => x.importado_em).filter(Boolean).sort().pop();
 
-    const filtros = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;font-size:12px">
-      <label style="display:flex;flex-direction:column;gap:3px">De<input type="month" id="tt-de" value="${state.de}"></label>
-      <label style="display:flex;flex-direction:column;gap:3px">Até<input type="month" id="tt-ate" value="${state.ate}"></label>
-      <label style="display:flex;flex-direction:column;gap:3px">Multiplicadora<select id="tt-multi">${opcoes(multis, state.multiplicadora, 'Todas')}</select></label>
-      <label style="display:flex;flex-direction:column;gap:3px">Marca<select id="tt-marca">${opcoes(marcas, state.marca, 'Todas')}</select></label>
-      <label style="display:flex;flex-direction:column;gap:3px">Tipo<select id="tt-cat">${opcoes(cats, state.categoria, 'Todos')}</select></label>
-      <span style="color:var(--muted);margin-left:auto">Planilhas: ${esc(d.planilhas.join(', '))}${ultimaImportacao ? ` · importadas até ${dataBR(ultimaImportacao)}` : ''}</span>
+    const filtros = `<div class="fbar">
+      <div class="fg"><label>De</label><input type="month" id="tt-de" value="${state.de}"></div>
+      <div class="fg"><label>Até</label><input type="month" id="tt-ate" value="${state.ate}"></div>
+      <div class="fg"><label>Multiplicadora</label><select id="tt-multi">${opcoes(multis, state.multiplicadora, 'Todas')}</select></div>
+      <div class="fg"><label>Marca</label><select id="tt-marca">${opcoes(marcas, state.marca, 'Todas')}</select></div>
+      <div class="fg"><label>Tipo</label><select id="tt-cat">${opcoes(cats, state.categoria, 'Todos')}</select></div>
+      <span style="flex-basis:100%;text-align:right;color:var(--muted);font-size:11.5px">Planilhas: ${esc(d.planilhas.join(', '))}${ultimaImportacao ? ` · importadas até ${dataBR(ultimaImportacao)}` : ''}</span>
     </div>`;
 
     if (!t.turmas) {
@@ -119,7 +119,7 @@
     }
 
     const cobertura = d.cobertura.filter(x => x.admitidos || x.integrados);
-    const coberturaHtml = cobertura.length ? `${nota('Estimativa: presentes nas turmas de integração ÷ admitidos no período (cadastro de Colaboradores), por marca. Sem a lista de participantes, não dá para saber quem foi integrado — a integração pode cair no mês seguinte à admissão, e há turmas com revendedores. Marcas sem planilha de multiplicadora (ex.: O Boticário) aparecem com poucos integrados.')}
+    const coberturaHtml = cobertura.length ? `${nota('Estimativa: presentes nas turmas de integração ÷ admitidos no período (cadastro de Colaboradores), por marca. Sem a lista de participantes, não dá para saber quem foi integrado — a integração pode cair no mês seguinte à admissão, e há turmas com revendedores. Marca cujas multiplicadoras não lançam no Hub aparece com poucos integrados.')}
       <div class="table-wrap fit"><table class="dt fit"><thead><tr><th>Marca</th><th>Presentes em integração</th><th>Admitidos</th><th>Cobertura estimada</th></tr></thead><tbody>
       ${cobertura.map(x => `<tr><td>${esc(x.marca)}</td><td>${int(x.integrados)}</td><td>${int(x.admitidos)}</td><td>${x.cobertura == null ? '—' : `<b style="color:${x.cobertura >= 0.9 ? '#0f8a4c' : x.cobertura >= 0.6 ? '#b7791f' : 'var(--critical)'}">${pct(x.cobertura)}</b>`}</td></tr>`).join('')}
       </tbody></table></div>` : empty('Sem integrações nem admissões no período.');
@@ -127,11 +127,11 @@
     const lista = d.lista.slice().sort((x, y) => String(y.data).localeCompare(String(x.data)));
     const mostrar = state.mostrarTodas ? lista : lista.slice(0, 50);
     const turmasHtml = `<div class="table-wrap" style="max-height:520px"><table class="dt"><thead><tr><th>Data</th><th>Tema</th><th>Tipo</th><th>Marca</th><th>Canal</th><th>Público</th><th>Modalidade</th><th>Local</th><th>Horário</th><th>Horas</th><th>Presentes</th><th>Multiplicadora</th></tr></thead><tbody>
-      ${mostrar.map(x => `<tr${(x.alertas || []).length ? ` title="${esc(x.alertas.join('; '))}" style="background:#FFF8E6"` : ''}><td>${dataBR(x.data)}</td><td>${esc(x.tema)}</td><td>${esc(x.categoria)}</td><td>${esc((x.marcas || []).join(', '))}</td><td>${esc(x.canal)}</td><td>${esc(x.publico)}</td><td>${esc(x.modalidade)}</td><td>${esc(x.local)}</td><td>${x.hora_inicio ? `${esc(x.hora_inicio)}–${esc(x.hora_fim || '')}` : '—'}</td><td>${hrs(x.horas)}</td><td>${x.presentes == null ? '—' : `${int(x.presentes)}/${int(x.convocados)}`}</td><td>${esc((x.multiplicadoras || []).join(', '))}</td></tr>`).join('')}
+      ${mostrar.map(x => `<tr${T.pendencias(x).length ? ` title="${esc(T.pendencias(x).join('; '))}" style="background:#FFF8E6"` : ''}><td>${dataBR(x.data)}</td><td>${esc(x.tema)}</td><td>${esc(x.categoria)}</td><td>${esc((x.marcas || []).join(', '))}</td><td>${esc(x.canal)}</td><td>${esc(x.publico)}</td><td>${esc(x.modalidade)}</td><td>${esc(x.local)}</td><td>${x.hora_inicio ? `${esc(x.hora_inicio)}–${esc(x.hora_fim || '')}` : '—'}</td><td>${hrs(x.horas)}</td><td>${x.presentes == null ? '—' : `${int(x.presentes)}/${int(x.convocados)}`}</td><td>${esc((x.multiplicadoras || []).join(', '))}</td></tr>`).join('')}
       </tbody></table></div>${lista.length > 50 ? `<button type="button" class="btn btn-outline btn-sm" id="tt-todas" style="margin-top:10px">${state.mostrarTodas ? 'Mostrar só as 50 mais recentes' : `Mostrar todas as ${lista.length}`}</button>` : ''}`;
 
-    const alertasHtml = d.comAlerta.length ? `<div class="table-wrap" style="max-height:320px"><table class="dt"><thead><tr><th>Planilha</th><th>Linha</th><th>Data</th><th>Tema</th><th>O que conferir</th></tr></thead><tbody>
-      ${d.comAlerta.map(x => `<tr><td>${esc(x.planilha)}</td><td>${int(x.linha)}</td><td>${dataBR(x.data)}</td><td>${esc(x.tema)}</td><td>${esc(x.alertas.join('; '))}</td></tr>`).join('')}
+    const pendHtml = d.comPendencia.length ? `<div class="table-wrap" style="max-height:360px"><table class="dt"><thead><tr><th>Data</th><th>Tema</th><th>Multiplicadora</th><th>Divergência</th><th>Justificativa</th></tr></thead><tbody>
+      ${d.comPendencia.map(x => `<tr><td>${dataBR(x.data)}</td><td>${esc(x.tema)}</td><td>${esc((x.multiplicadoras || []).join(', '))}</td><td>${esc(T.pendencias(x).join('; '))}</td><td>${x.justificativa ? esc(x.justificativa) : '<b style="color:var(--critical)">a justificar</b>'}</td></tr>`).join('')}
       </tbody></table></div>` : '';
 
     el.innerHTML = filtros + `
@@ -151,8 +151,8 @@
         ${card('Por público e canal', '&#128101;', tabela(d.porPublico, 'Público') + '<div style="height:12px"></div>' + tabela(d.porCanal, 'Canal'))}
         ${card('Cobertura da integração', '&#127919;', coberturaHtml, { full: true })}
         ${card('Temas', '&#128218;', '<div class="chart-scroll"><div class="chart-inner" id="c-tt-tema-wrap"><canvas id="c-tt-tema"></canvas></div></div>', { full: true })}
-        ${card(`Turmas (${int(lista.length)})`, '&#128203;', nota('Linhas em amarelo têm algo a conferir na planilha (passe o mouse).') + turmasHtml, { full: true })}
-        ${d.comAlerta.length ? card(`Para conferir nas planilhas (${d.comAlerta.length})`, '&#9888;&#65039;', alertasHtml, { full: true }) : ''}
+        ${card(`Turmas (${int(lista.length)})`, '&#128203;', nota('Linhas em amarelo têm divergência (passe o mouse); a justificativa é escrita na aba Lançamentos.') + turmasHtml, { full: true })}
+        ${d.comPendencia.length ? card(`Divergências (${d.comPendencia.length} · ${d.comPendencia.filter(x => !x.justificativa).length} a justificar)`, '&#9888;&#65039;', pendHtml, { full: true }) : ''}
         ${card('Como ler os indicadores', '&#8505;&#65039;', explicacao(f), { full: true })}
       </div>`;
 
@@ -180,48 +180,71 @@
   // ==================================================================
   // LANÇAMENTOS
   // ==================================================================
-  const MARCAS = ["Levi's", 'Hering', 'Sfera', 'O Boticário', 'Quem disse, Berenice?'];
+  // Desde 14/10/2026 todas as turmas são lançamentos do Hub (as planilhas deixaram
+  // de ser usadas). Divergências (metrics-turmas.js, PENDENCIAS) não são corrigidas
+  // pelo RH: ficam marcadas e a multiplicadora escreve a justificativa.
+  const MARCAS = ["Levi's", 'Hering', 'Sfera', 'O Boticário', 'O Boticário VD', 'Quem disse, Berenice?'];
+  const TIPOS = ['Integração e onboarding', 'Produto e vendas', 'Encontro de ciclo', 'Liderança e comportamento', 'Outros'];
   const meuNome = () => (window.HUB_USER && (HUB_USER.nome || HUB_USER.email)) || '';
-  // Pode editar/excluir: só turma lançada no Hub; T&D/RH qualquer uma, a multiplicadora só as dela.
+  // Nome da multiplicadora nas turmas (o da conta pode ser mais longo: "Maria Eduarda
+  // Figueira de Campos Vasconcelos" lança como "Maria Eduarda Vasconcelos"): o mais
+  // usado nas turmas ligadas à conta dela; sem turmas, o nome da conta.
+  function meuNomeMulti() {
+    const id = window.HUB_USER && HUB_USER.id;
+    const conta = {};
+    ((window.HUB_DATA && HUB_DATA.treinamento_turmas) || []).forEach(t => { if (id && t.criado_por === id && (t.multiplicadoras || [])[0]) conta[t.multiplicadoras[0]] = (conta[t.multiplicadoras[0]] || 0) + 1; });
+    return Object.entries(conta).sort((a, b) => b[1] - a[1]).map(x => x[0])[0] || meuNome();
+  }
+  // Pode editar: T&D/RH qualquer turma; a multiplicadora só as ligadas à conta dela.
   const editavel = x => x.origem === 'hub' && (podeTudo() || (x.criado_por && window.HUB_USER && x.criado_por === HUB_USER.id));
+  const pctAder = (p, c) => (p == null || !c ? '—' : U.fmtPct(p / c, 0));
+  const SIT = {
+    justificar: '<span class="ave-pill" style="--c:#D03B3B">Justificar</span>',
+    justificada: '<span class="ave-pill" style="--c:#0F8A4C">Justificada</span>',
+    ok: ''
+  };
 
   function abaLancamentos(el) {
     const todas = ((window.HUB_DATA && HUB_DATA.treinamento_turmas) || []);
     const de = state.de + '-01', ate = fimDoMes(state.ate);
     const busca = U.normalizeText(state.busca);
-    const lista = todas.filter(x => {
-      const d = String(x.data).slice(0, 10);
-      if (d < de || d > ate) return false;
-      if (state.origem && (x.origem || 'planilha') !== state.origem) return false;
+    const noPeriodo = todas.filter(x => { const d = String(x.data).slice(0, 10); return d >= de && d <= ate; });
+    const lista = noPeriodo.filter(x => {
       if (state.multiplicadora && !(x.multiplicadoras || []).includes(state.multiplicadora)) return false;
+      if (state.pendencia && T.situacao(x) !== state.pendencia) return false;
       if (busca && !U.normalizeText([x.tema, x.local, (x.marcas || []).join(' '), (x.multiplicadoras || []).join(' ')].join(' ')).includes(busca)) return false;
       return true;
     }).sort((x, y) => String(y.data).localeCompare(String(x.data)) || String(y.hora_inicio || '').localeCompare(String(x.hora_inicio || '')));
-    const doHub = todas.filter(x => x.origem === 'hub').length;
     const multis = Array.from(new Set(todas.flatMap(x => x.multiplicadoras || []))).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+    const aJustificar = noPeriodo.filter(x => T.situacao(x) === 'justificar').length;
 
-    const linhas = lista.map(x => `<tr${editavel(x) ? ` data-id="${x.id}" style="cursor:pointer"` : ''}>
-        <td>${dataBR(x.data)}</td><td><b>${esc(x.tema)}</b>${x.observacao ? `<div style="font-size:11px;color:var(--muted)">${esc(x.observacao)}</div>` : ''}</td>
+    const linhas = lista.map(x => {
+      const pend = T.pendencias(x);
+      return `<tr${editavel(x) ? ` data-id="${x.id}" style="cursor:pointer"` : ''}>
+        <td>${dataBR(x.data)}</td>
+        <td><b>${esc(x.tema)}</b>${x.observacao ? `<div style="font-size:11px;color:var(--muted)">${esc(x.observacao)}</div>` : ''}${pend.length ? `<div style="font-size:11px;color:${x.justificativa ? 'var(--muted)' : 'var(--critical)'}">${esc(pend.join(' · '))}${x.justificativa ? ` — ${esc(x.justificativa)}` : ''}</div>` : ''}</td>
         <td>${esc((x.marcas || []).join(', '))}</td><td>${x.hora_inicio ? `${esc(x.hora_inicio)}–${esc(x.hora_fim || '')}` : '—'}</td><td>${hrs(x.horas)}</td>
-        <td>${x.presentes == null ? '—' : `${int(x.presentes)}/${int(x.convocados)}${x.convocados ? ` · ${pct(Math.min(x.presentes, x.convocados) / x.convocados)}` : ''}`}</td><td>${esc((x.multiplicadoras || []).join(', '))}</td>
-        <td>${x.origem === 'hub' ? `<span class="ave-pill" style="--c:#1C7CEC">Hub</span><div style="font-size:10.5px;color:var(--muted)">${esc(x.criado_por_nome || '')}</div>` : '<span class="ave-pill" style="--c:#8A8F98" title="Importada da planilha: corrija na planilha e reenvie">Planilha</span>'}</td>
-        <td style="white-space:nowrap">${editavel(x) ? '<button type="button" class="btn btn-outline btn-sm" style="width:auto">Editar</button>' : ''}</td></tr>`).join('');
+        <td>${x.presentes == null ? '—' : `${int(x.presentes)}/${int(x.convocados)} · ${pctAder(x.presentes, x.convocados)}`}</td>
+        <td>${esc((x.multiplicadoras || []).join(', '))}</td>
+        <td>${SIT[T.situacao(x)]}</td>
+        <td style="white-space:nowrap">${editavel(x) ? `<button type="button" class="btn btn-outline btn-sm" style="width:auto">${T.situacao(x) === 'justificar' ? 'Justificar' : 'Editar'}</button>` : ''}</td></tr>`;
+    }).join('');
 
     el.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <span style="font-size:12.5px;color:var(--muted)">${int(lista.length)} turma(s) no período · ${int(doHub)} lançada(s) no Hub${podeTudo() ? '' : ' (você vê só as que lançou)'}</span>
+        <span style="font-size:12.5px;color:var(--muted)">${int(lista.length)} turma(s)${podeTudo() ? '' : ' lançadas por você'} · ${aJustificar ? `<b style="color:var(--critical)">${int(aJustificar)} com divergência a justificar</b> no período` : 'nenhuma divergência a justificar no período'}</span>
         ${podeLancar() ? '<button type="button" class="btn btn-sm" style="width:auto" id="tt-novo">+ Lançar turma</button>' : ''}
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px;font-size:12px">
-        <input type="text" id="tt-busca" placeholder="Buscar por tema, local, marca..." value="${esc(state.busca)}" style="min-width:220px">
-        <label style="display:flex;flex-direction:column;gap:3px">De<input type="month" id="tt-de" value="${state.de}"></label>
-        <label style="display:flex;flex-direction:column;gap:3px">Até<input type="month" id="tt-ate" value="${state.ate}"></label>
-        ${podeTudo() ? `<label style="display:flex;flex-direction:column;gap:3px">Multiplicadora<select id="tt-multi">${opcoes(multis, state.multiplicadora, 'Todas')}</select></label>
-        <label style="display:flex;flex-direction:column;gap:3px">Origem<select id="tt-origem"><option value="">Todas</option><option value="hub"${state.origem === 'hub' ? ' selected' : ''}>Lançadas no Hub</option><option value="planilha"${state.origem === 'planilha' ? ' selected' : ''}>Importadas de planilha</option></select></label>` : ''}
+      <div class="fbar">
+        <div class="fg" style="max-width:260px"><label>Buscar</label><input type="text" id="tt-busca" placeholder="Tema, local, marca..." value="${esc(state.busca)}"></div>
+        <div class="fg"><label>De</label><input type="month" id="tt-de" value="${state.de}"></div>
+        <div class="fg"><label>Até</label><input type="month" id="tt-ate" value="${state.ate}"></div>
+        ${podeTudo() ? `<div class="fg"><label>Multiplicadora</label><select id="tt-multi">${opcoes(multis, state.multiplicadora, 'Todas')}</select></div>` : ''}
+        <div class="fg"><label>Divergências</label><select id="tt-pend"><option value="">Todas as turmas</option><option value="justificar"${state.pendencia === 'justificar' ? ' selected' : ''}>A justificar</option><option value="justificada"${state.pendencia === 'justificada' ? ' selected' : ''}>Justificadas</option><option value="ok"${state.pendencia === 'ok' ? ' selected' : ''}>Sem divergência</option></select></div>
       </div>
-      ${lista.length ? `<div class="table-wrap" style="max-height:640px"><table class="dt"><thead><tr><th>Data</th><th>Tema</th><th>Marca</th><th>Horário</th><th>Horas</th><th>Presentes</th><th>Multiplicadora</th><th>Origem</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
-        : empty('Nenhuma turma no período.', podeLancar() ? 'Clique em "+ Lançar turma" para registrar a primeira.' : '')}
-      ${nota('Turmas importadas da planilha não são editadas aqui: corrija na planilha e reenvie em Administração → Upload. Quem lança no Hub deixa de enviar a planilha; um reenvio de planilha nunca apaga as turmas lançadas no Hub.')}`;
+      ${lista.length ? `<div class="table-wrap" style="max-height:640px"><table class="dt"><thead><tr><th>Data</th><th>Tema</th><th>Marca</th><th>Horário</th><th>Horas</th><th>Presentes · aderência</th><th>Multiplicadora</th><th>Situação</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
+        : empty('Nenhuma turma com esses filtros.', podeLancar() ? 'Clique em "+ Lançar turma" para registrar uma turma.' : '')}
+      ${nota('Divergência = mais presentes que convocados, falta de horário, duração, presentes, local, tema ou instrutor, ou duração diferente do horário. A turma fica marcada "Justificar" até a multiplicadora explicar o motivo (abra a turma e preencha a Justificativa). Turmas de multiplicadoras sem conta no Hub são justificadas por T&D/RH.')}`;
 
     const novo = el.querySelector('#tt-novo');
     if (novo) novo.addEventListener('click', () => abrirFormulario(null));
@@ -232,7 +255,7 @@
     on('tt-de', v => { if (v) state.de = v; if (state.ate < state.de) state.ate = state.de; });
     on('tt-ate', v => { if (v) state.ate = v; if (state.ate < state.de) state.de = state.ate; });
     on('tt-multi', v => { state.multiplicadora = v; });
-    on('tt-origem', v => { state.origem = v; });
+    on('tt-pend', v => { state.pendencia = v; });
   }
 
   function modal(titulo, sub, corpo) {
@@ -252,32 +275,40 @@
     m.querySelectorAll('[data-fechar]').forEach(b => b.addEventListener('click', () => m.remove()));
     return m;
   }
-  const bloco = (titulo, html) => `<div class="card" style="margin-bottom:12px;padding:14px 16px"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">${titulo}</div>${html}</div>`;
+  const bloco = (titulo, html, estilo) => `<div class="card" style="margin-bottom:12px;padding:14px 16px;${estilo || ''}"><div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">${titulo}</div>${html}</div>`;
   const grade = html => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px">${html}</div>`;
   const inp = (id, label, valor, tipo, extra) => `<div class="field"><label>${label}</label><input id="${id}" type="${tipo || 'text'}" value="${esc(valor == null ? '' : valor)}" ${extra || ''}></div>`;
-  const sel = (id, label, lista, atual) => `<div class="field"><label>${label}</label><select id="${id}" style="width:100%">${lista.map(o => `<option ${o === atual ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+  const sel = (id, label, lista, atual) => `<div class="field"><label>${label}</label><select id="${id}" style="width:100%">${(atual && !lista.includes(atual) ? [atual] : []).concat(lista).map(o => `<option ${o === atual ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
   const sugestoes = (id, valores) => `<datalist id="${id}">${Array.from(new Set(valores.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
   const minutos = h => (/^\d{1,2}:\d{2}$/.test(h || '') ? +h.split(':')[0] * 60 + +h.split(':')[1] : null);
 
   function abrirFormulario(x) {
     const novo = !x;
+    const P = HUB_PARSERS_TURMAS._internal;
     const d = x || { data: new Date().toISOString().slice(0, 10), modalidade: 'Presencial', publico: 'Liderados', canal: 'Loja', marcas: [], multiplicadoras: [] };
     const todas = (window.HUB_DATA && HUB_DATA.treinamento_turmas) || [];
-    const multis = todas.flatMap(t => t.multiplicadoras || []).concat(meuNome());
-    const principal = (d.multiplicadoras || [])[0] || (podeTudo() ? '' : meuNome());
+    // Multiplicadoras com turma no último ano (lista do campo), sem o "Sem instrutor".
+    const umAno = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+    const multis = todas.filter(t => String(t.data) >= umAno).flatMap(t => t.multiplicadoras || []).filter(n => n !== 'Sem instrutor').concat(meuNomeMulti());
+    const principal = (d.multiplicadoras || [])[0] || (podeTudo() ? '' : meuNomeMulti());
     const dupla = (d.multiplicadoras || []).slice(1).join(', ');
-    const corpo = bloco('Turma', grade(`
+    const pend = novo ? [] : T.pendencias(d);
+    const corpo =
+      (pend.length ? bloco('Divergências desta turma', `<ul style="margin:0 0 0 18px;font-size:12.5px">${pend.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        <p class="sub" style="margin-top:6px;font-size:11px">Corrija os campos abaixo, se for o caso, ou explique o motivo na Justificativa no fim do formulário.</p>`, 'border-left:4px solid var(--critical)') : '')
+      + bloco('Turma', grade(`
         ${inp('tf-data', 'Data *', String(d.data || '').slice(0, 10), 'date')}
-        <div class="field" style="grid-column:span 2"><label>Tema *</label><input id="tf-tema" list="tf-l-tema" value="${esc(d.tema || '')}" placeholder="Ex.: INTEGRAÇÃO HERING"></div>
-        ${sel('tf-mod', 'Modalidade', ['Presencial', 'Online'], d.modalidade)}
+        <div class="field" style="grid-column:span 2"><label>Tema *</label><input id="tf-tema" list="tf-l-tema" value="${esc(d.tema || '')}" placeholder="Escolha um tema já usado ou digite um novo"></div>
+        ${sel('tf-tipo', 'Tipo da turma', TIPOS, d.categoria || '')}
+        ${sel('tf-mod', 'Modalidade', ['Presencial', 'Online', 'Híbrido'], d.modalidade)}
         <div class="field"><label>Local</label><input id="tf-local" list="tf-l-local" value="${esc(d.local || '')}"></div>
         ${inp('tf-ini', 'Início *', d.hora_inicio, 'time')}
         ${inp('tf-fim', 'Fim *', d.hora_fim, 'time')}
         ${inp('tf-horas', 'Duração (h) *', d.horas, 'number', 'step="0.25" min="0"')}`)
-        + '<p class="sub" style="margin-top:6px;font-size:11px">A duração é preenchida pelo horário; ajuste se houve intervalo (ex.: 10:00–15:00 com 30 min de almoço = 4,5 h).</p>')
+        + '<p class="sub" style="margin-top:6px;font-size:11px">A duração é preenchida pelo horário; ajuste se houve intervalo (ex.: 10:00–15:00 com 30 min de almoço = 4,5 h). O tipo é sugerido pelo tema; mude se não for o caso.</p>')
       + bloco('Público e entrega', grade(`
-        ${sel('tf-pub', 'Público', ['Liderados', 'Líderes', 'Líderes e liderados'], d.publico)}
-        ${sel('tf-canal', 'Canal', ['Loja', 'Escritório', 'Loja e Escritório'], d.canal)}
+        ${sel('tf-pub', 'Público', ['Liderados', 'Líderes', 'Líderes e liderados', 'Revendedores'], d.publico)}
+        ${sel('tf-canal', 'Canal', ['Loja', 'VD', 'Escritório', 'Loja e VD', 'Loja e Escritório'], d.canal)}
         ${inp('tf-conv', 'Convocados *', d.convocados, 'number', 'min="0" step="1"')}
         ${inp('tf-pres', 'Presentes *', d.presentes, 'number', 'min="0" step="1"')}
         <div class="field"><label>Aderência</label><div id="tf-ader" style="padding:9px 0;font-size:15px;font-weight:700">—</div></div>`)
@@ -286,11 +317,16 @@
         ${podeTudo() ? `<div class="field"><label>Multiplicadora *</label><input id="tf-multi" list="tf-l-multi" value="${esc(principal)}"></div>` : `<div class="field"><label>Multiplicadora</label><input id="tf-multi" value="${esc(principal)}" disabled></div>`}
         <div class="field"><label>Junto com (turma em dupla)</label><input id="tf-dupla" list="tf-l-multi" value="${esc(dupla)}" placeholder="opcional"></div>`)
         + `<div class="field" style="margin-top:10px"><label>Observação</label><textarea id="tf-obs" rows="2" style="width:100%" placeholder="opcional: turma com revendedores, material, o que foi trabalhado...">${esc(d.observacao || '')}</textarea></div>`)
-      + sugestoes('tf-l-tema', todas.map(t => t.tema)) + sugestoes('tf-l-local', todas.map(t => t.local)) + sugestoes('tf-l-multi', multis)
+      + bloco('Justificativa', `<textarea id="tf-just" rows="3" style="width:100%" placeholder="Explique a divergência: por que vieram mais pessoas que as convocadas, por que falta o horário, a duração, o local...">${esc(d.justificativa || '')}</textarea>
+        <p class="sub" style="margin-top:6px;font-size:11px">Obrigatória quando vierem mais pessoas que as convocadas.${d.justificado_por ? ` Justificada por ${esc(d.justificado_por)} em ${dataBR(d.justificado_em)}.` : ''}</p>`)
+      + sugestoes('tf-l-tema', todas.map(t => t.tema).filter(t => t !== 'TEMA NÃO INFORMADO')) + sugestoes('tf-l-local', todas.map(t => t.local)) + sugestoes('tf-l-multi', multis)
       + `<div class="msg err" id="tf-msg" style="display:none"></div>
         <div style="display:flex;gap:8px;justify-content:space-between;margin-top:4px;flex-wrap:wrap">
           <span>${!novo ? '<button type="button" class="btn btn-outline btn-sm" style="width:auto;color:var(--critical)" id="tf-excluir">Excluir turma</button>' : ''}</span>
-          <button type="button" class="btn btn-sm" style="width:auto" id="tf-salvar">${novo ? 'Lançar turma' : 'Salvar alterações'}</button>
+          <span style="display:flex;gap:8px;flex-wrap:wrap">
+            ${!novo ? '<button type="button" class="btn btn-outline btn-sm" style="width:auto" id="tf-so-just">Salvar só a justificativa</button>' : ''}
+            <button type="button" class="btn btn-sm" style="width:auto" id="tf-salvar">${novo ? 'Lançar turma' : 'Salvar alterações'}</button>
+          </span>
         </div>
         ${!novo ? `<p class="sub" style="margin-top:8px;font-size:10.5px;color:var(--muted);text-align:right">Lançada por ${esc(d.criado_por_nome || '—')} em ${dataBR(d.importado_em)}${d.atualizado_por ? ` · última alteração por ${esc(d.atualizado_por)} em ${dataBR(d.atualizado_em)}` : ''}</p>` : ''}`;
 
@@ -305,20 +341,25 @@
     };
     ['input', 'change'].forEach(ev => { $('tf-ini').addEventListener(ev, calcular); $('tf-fim').addEventListener(ev, calcular); });
 
-    // Aderência = presentes ÷ convocados, na hora em que os dois são preenchidos.
+    // Tipo sugerido pelo tema, até a pessoa escolher outro.
+    let tipoManual = !novo && !!d.categoria;
+    $('tf-tipo').addEventListener('change', () => { tipoManual = true; });
+    const sugerirTipo = () => { if (!tipoManual && $('tf-tema').value.trim()) $('tf-tipo').value = P.categoria(P.tema($('tf-tema').value)); };
+    ['input', 'change'].forEach(ev => $('tf-tema').addEventListener(ev, sugerirTipo));
+    if (novo) $('tf-tipo').value = TIPOS[0];
+
+    // Aderência = presentes ÷ convocados, ao vivo. Acima de 100% é permitido, com justificativa.
     const aderencia = () => {
       const c = Number($('tf-conv').value), p = Number($('tf-pres').value), e = $('tf-ader');
       if ($('tf-conv').value === '' || $('tf-pres').value === '' || !(c > 0)) { e.textContent = '—'; e.style.color = ''; return; }
-      if (p > c) { e.textContent = 'presentes acima dos convocados'; e.style.color = 'var(--critical)'; return; }
       const v = p / c;
-      e.textContent = U.fmtPct(v, 0);
-      e.style.color = v >= 0.9 ? '#0f8a4c' : v >= 0.7 ? '#b7791f' : 'var(--critical)';
+      e.textContent = U.fmtPct(v, 0) + (p > c ? ' · acima dos convocados: justifique' : '');
+      e.style.color = p > c ? '#b7791f' : v >= 0.9 ? '#0f8a4c' : v >= 0.7 ? '#b7791f' : 'var(--critical)';
     };
     ['input', 'change'].forEach(ev => { $('tf-conv').addEventListener(ev, aderencia); $('tf-pres').addEventListener(ev, aderencia); });
     aderencia();
 
     $('tf-salvar').addEventListener('click', async () => {
-      const P = HUB_PARSERS_TURMAS._internal;
       const tema = P.tema($('tf-tema').value);
       const marcas = Array.from(m.querySelectorAll('.tf-marca:checked')).map(c => c.value);
       const multiPrincipal = ($('tf-multi').value || '').trim();
@@ -327,19 +368,20 @@
       const pres = $('tf-pres').value === '' ? null : Math.round(Number($('tf-pres').value));
       const horas = Number(String($('tf-horas').value).replace(',', '.'));
       const ini = $('tf-ini').value, fim = $('tf-fim').value;
+      const just = $('tf-just').value.trim();
       if (!$('tf-data').value || !tema) return msg('Informe a data e o tema.');
-      if (!ini || !fim || minutos(fim) <= minutos(ini)) return msg('Informe o horário de início e de fim (o fim depois do início).');
+      if (!ini || !fim || minutos(fim) <= minutos(ini)) return msg('Informe o horário de início e de fim (o fim depois do início). Se não tiver o horário, use "Salvar só a justificativa".');
       if (!(horas > 0)) return msg('Informe a duração da turma.');
       if (conv == null || pres == null) return msg('Informe convocados e presentes.');
-      if (pres > conv) return msg('Presentes não pode ser maior que convocados. Se veio gente a mais, aumente os convocados.');
+      if (pres > conv && !just) return msg('Vieram mais pessoas que as convocadas: explique o motivo na Justificativa.');
       if (!marcas.length) return msg('Marque pelo menos uma marca.');
       if (!multiPrincipal) return msg('Informe a multiplicadora.');
       const dados = {
-        data: $('tf-data').value, tema, categoria: P.categoria(tema), modalidade: $('tf-mod').value, local: P.local($('tf-local').value),
+        data: $('tf-data').value, tema, categoria: $('tf-tipo').value || P.categoria(tema), modalidade: $('tf-mod').value, local: P.local($('tf-local').value),
         hora_inicio: ini, hora_fim: fim, horas, publico: $('tf-pub').value, canal: $('tf-canal').value,
         convocados: conv, presentes: pres, marcas, marca_original: marcas.join(' / '),
         multiplicadoras: multisTurma, multiplicador_original: multisTurma.join(' & '), planilha: multiPrincipal,
-        observacao: $('tf-obs').value.trim(), usuario: meuNome()
+        observacao: $('tf-obs').value.trim(), justificativa: just, usuario: meuNome()
       };
       const btn = $('tf-salvar');
       btn.disabled = true; btn.textContent = 'Salvando...'; msg('');
@@ -351,6 +393,14 @@
         msg(err.message);
         btn.disabled = false; btn.textContent = novo ? 'Lançar turma' : 'Salvar alterações';
       }
+    });
+
+    // Só a justificativa: para turma importada incompleta, que não passaria nas validações acima.
+    const soJust = $('tf-so-just');
+    if (soJust) soJust.addEventListener('click', async () => {
+      soJust.disabled = true; msg('');
+      try { await HUB_DAL.justificarTurmaHub(d.id, $('tf-just').value.trim(), meuNome()); m.remove(); HUB_RENDER_CURRENT(); }
+      catch (err) { msg(err.message); soJust.disabled = false; }
     });
 
     const exc = $('tf-excluir');

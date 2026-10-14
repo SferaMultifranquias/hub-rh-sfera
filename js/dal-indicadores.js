@@ -174,6 +174,11 @@
     await recarregarTurmas();
     return r;
   }
+  // Só a justificativa da divergência (turma importada incompleta não passa nas validações do formulário).
+  async function justificarTurmaHub(id, texto, usuario) {
+    await salvarTreinamento('treinamento_turma_justificar', { p_id: id, p_texto: texto, p_usuario: usuario }, 'supabase-treinamento-turmas-ajustes.sql');
+    await recarregarTurmas();
+  }
   async function excluirTurmaHub(id) {
     await salvarTreinamento('treinamento_turma_excluir', { p_id: id }, 'supabase-treinamento-turmas.sql');
     await recarregarTurmas();
@@ -238,7 +243,7 @@
   }
 
   window.HUB_DAL = {
-    TABLES, loadAll, replaceTable, salvarUnibe, salvarAcademia, salvarTurmas, salvarTurmaHub, excluirTurmaHub, recarregarTurmas, logUpload, listUploadLog, listProfiles, upsertProfile, deleteProfile, setProfileStatus,
+    TABLES, loadAll, replaceTable, salvarUnibe, salvarAcademia, salvarTurmas, salvarTurmaHub, justificarTurmaHub, excluirTurmaHub, recarregarTurmas, logUpload, listUploadLog, listProfiles, upsertProfile, deleteProfile, setProfileStatus,
     logViewAsStart, logViewAsEnd, listViewAsLog
   };
 })();
