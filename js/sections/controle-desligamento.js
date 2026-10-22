@@ -1,4 +1,4 @@
-// Entrevista de Desligamento → guia "Controle de Desligamento".
+// Desenvolvimento Organizacional → módulo independente Controle de Desligamento.
 //
 // Substitui a aba "ATUALIZADA (MOVIMENTAR)" da planilha "Controle de
 // Desligamento.xlsx": o RH lança o ID de desligamento que chega pelo Forms do
@@ -250,6 +250,7 @@
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <div class="sub" style="font-size:12px;color:var(--muted)">${U.fmtInt(noPeriodo.length)} desligamento(s) no período/filtros${semVinculo ? ` · ${U.fmtInt(semVinculo)} sem cadastro correspondente no Headcount` : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${HUB_PERMISSIONS.hasPerm(HUB_USER,'indicadores.desligamento')?'<button type="button" class="btn btn-outline btn-sm" style="width:auto" id="cd-abrir-entrevista">Ver indicadores das entrevistas</button>':''}
           <button type="button" class="btn btn-outline btn-sm" style="width:auto" id="cd-exportar" title="Baixa em Excel a lista com os filtros atuais e as respostas das entrevistas dessas fichas">Exportar Excel</button>
           <button type="button" class="btn btn-sm" style="width:auto" id="cd-novo">+ Lançar desligamento</button>
         </div>
@@ -280,6 +281,7 @@
         <button type="button" class="btn btn-outline btn-sm" style="width:auto" id="cd-limpar">Limpar filtros da lista</button>
       </div>
       <div id="cd-tabela"></div>`;
+    el.querySelector('#cd-abrir-entrevista')?.addEventListener('click',()=>HUB_GOTO_SECTION('ind-desligamento'));
     const redesenhar = () => desenharTabela(el.querySelector('#cd-tabela'), noPeriodo);
     const bind = (id, campo, evt) => el.querySelector(id).addEventListener(evt || 'change', e => {
       estado[campo] = e.target.value; estado.pagina = 1; redesenhar();

@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),F=require('../js/conexao-fit-core.js');
+const sample=['Pessoa de teste\nResultados do Teste: Fit Cultural\nCompletado 28 Mai 26 às 13:25h\n54 % ADERÊNCIA COMPORTAMENTAL\n62 % ADERÊNCIA VALORES\n58 % ADERÊNCIA FINAL\nA configuração das Competências foi alterada', 'Criatividade e Inovação 74%\nEmpreendedorismo 74%\nRelacionamento Interpessoal 74%\nPlanejamento 26%\nValores Pessoais\nVALORES DA EMPRESA ADERÊNCIA\nGENTE QUE GOSTA DE GENTE 88%\n#SOMOS TODOS SFERA 79%\nVALORES DE SCHWARTZ ADERÊNCIA\nAltruísmo 89%\nAuto determinação (líder de si mesmo / autonomia) 78%'];
+const parsed=F.parse(sample);
+assert.equal(parsed.recognized,true);assert.equal(parsed.report.candidate,'Pessoa de teste');assert.equal(parsed.report.completedDate,'2026-05-28');assert.equal(parsed.report.behavioral,54);assert.equal(parsed.report.valuesScore,62);assert.equal(parsed.report.final,58);assert.equal(parsed.report.competencies[0].score,74);assert.equal(parsed.report.competencies.at(-1).score,26);assert.equal(parsed.report.values[0].score,88);assert.equal(parsed.report.schwartz[1].score,78);assert.equal(parsed.report.configChanged,true);
+assert.equal(parsed.report.competencies[3].score,null);assert.ok(parsed.missing>0);assert.equal(F.parse(['arquivo desconhecido']).recognized,false);assert.equal(F.parse(['Pessoa\nFit Cultural\nPlanejamento 101%']).report.competencies.at(-1).score,null);
+const guidance=F.guidance(parsed.report);assert.equal(guidance.strengths[0].score,74);assert.equal(guidance.development[0].score,26);assert.deepEqual(guidance.journey.map(x=>x.milestone),[30,75,120]);assert.equal(F.norm('João  da Silva'),'JOAO DA SILVA');
+assert.equal(F.identity('Ana','11111111111','ANA','111.111.111-11'),'CPF conferido');
+assert.throws(()=>F.identity('Ana','22222222222','Ana','11111111111'));
+assert.throws(()=>F.identity('Outra pessoa','','Ana',''));
+assert.equal(F.identity('José da Silva','','Jose da Silva',''),'Nome conferido');
+const role=F.parse(['Pessoa de teste\nFit Cultural\nCompetências Comportamentais # COMPETÊNCIA COMPORTAMENTAL DESEJADO ADERÊNCIA 1 Consultor de Vendas 100 % 54%']);
+assert.equal(role.report.behavioralRole,'CONSULTOR DE VENDAS');assert.equal(role.report.desired,100);
+console.log('24 verificações da extração, identidade e condução Fit aprovadas.');

@@ -69,6 +69,11 @@
     }
   ];
 
+  CATALOG.splice(1,0,{group:'desenvolvimento_organizacional',groupLabel:'Desenvolvimento Organizacional',icon:'&#127793;',items:[
+ {key:'conexao_rh.acompanhar',label:'Conexão RH — consultar colaboradores e jornada'},
+ {key:'conexao_rh.gerir',label:'Conexão RH — organizar turmas, conduzir encontros e registrar devolutivas'},
+ {key:'conexao_rh.configurar',label:'Conexão RH — configurar programa e importar piloto'},
+ {key:'conexao_rh.documentos',label:'Conexão RH — consultar e anexar Fit Cultural (dados pessoais)'}]});
   const ALL_KEYS = CATALOG.flatMap(g => g.items.map(i => i.key));
 
   // Presets só marcam um ponto de partida no formulário — depois de aplicar,
@@ -84,7 +89,7 @@
     // Boletim da Liderança é só do Administrador (08/10/2026); os demais veem
     // os números publicados da própria operação no Dashboard.
     // Log de Acessos: só Administrador (fora do preset RH).
-    rh: ALL_KEYS.filter(k => k !== 'admin.usuarios' && k !== 'admin.log_acessos' &&k !== 'indicadores.controle_desligamento' && k !== 'indicadores.boletim'
+    rh: ALL_KEYS.filter(k => !k.startsWith('conexao_rh.') && k !== 'admin.usuarios' && k !== 'admin.log_acessos' &&k !== 'indicadores.controle_desligamento' && k !== 'indicadores.boletim'
       && k !== 'indicadores.desligamento' && k !== 'indicadores.pesquisa_clima' && k !== 'indicadores.engajamento'
       && k !== 'indicadores.satisfacao' && k !== 'indicadores.satisfacao_completo' && k !== 'indicadores.satisfacao_participacao'
       && k !== 'indicadores.fechamento'

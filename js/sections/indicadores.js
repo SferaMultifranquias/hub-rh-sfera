@@ -588,32 +588,12 @@
   // essa sim mostra nome, porque é acompanhamento operacional de envio, não
   // conteúdo de resposta). Estado de qual subaba está aberta persiste em
   // memória do módulo (mesmo padrão de admin/cadastros.js).
-  // A antiga subaba "Lista de Colaboradores" (links gerados) foi absorvida
-  // pela guia Controle de Desligamento: gerar/copiar link e ver respostas
-  // ficam na ficha de cada desligamento.
-  let desligamentoTab = 'indicadores';
-
+  // A entrevista mantém seus indicadores; a operação é um módulo independente.
   function renderDesligamento(el, f) {
-    el.innerHTML = `
-      <div class="tab-bar">
-        <button type="button" class="tab-btn ${desligamentoTab === 'indicadores' ? 'active' : ''}" data-desl-tab="indicadores">Indicadores</button>
-        ${window.HUB_CONTROLE_DESLIGAMENTO && HUB_CONTROLE_DESLIGAMENTO.pode() ? `<button type="button" class="tab-btn ${desligamentoTab === 'controle' ? 'active' : ''}" data-desl-tab="controle">Controle de Desligamento</button>` : ''}
-      </div>
-      <div id="desl-tab-body"></div>`;
-    el.querySelectorAll('[data-desl-tab]').forEach(b => b.addEventListener('click', () => {
-      desligamentoTab = b.dataset.deslTab;
-      renderDesligamento(el, f);
-    }));
-    const body = el.querySelector('#desl-tab-body');
-    if (desligamentoTab === 'controle' && window.HUB_CONTROLE_DESLIGAMENTO) {
-      if (!HUB_CONTROLE_DESLIGAMENTO.pode()) {
-        body.innerHTML = empty('Acesso restrito.', 'Você não tem permissão para o controle de desligamentos.');
-        return;
-      }
-      HUB_CONTROLE_DESLIGAMENTO.render(body, f);
-      return;
-    }
-    renderDesligamentoIndicadores(body, f);
+    const podeControle=HUB_PERMISSIONS.hasPerm(HUB_USER,'indicadores.controle_desligamento');
+    el.innerHTML=`<div class="toolbar" style="justify-content:space-between;align-items:center"><p class="sub" style="margin:0">Resultados e análises das entrevistas de desligamento no período e filtros selecionados.</p>${podeControle?'<button type="button" class="btn btn-outline btn-sm" style="width:auto" data-abrir-controle>Abrir Controle de Desligamento</button>':''}</div><div data-entrevista-indicadores></div>`;
+    el.querySelector('[data-abrir-controle]')?.addEventListener('click',()=>HUB_GOTO_SECTION('do-controle-desligamento'));
+    renderDesligamentoIndicadores(el.querySelector('[data-entrevista-indicadores]'),f);
   }
 
   function renderDesligamentoIndicadores(el, f) {
@@ -622,7 +602,7 @@
     const linksGerados = window.HUB_METRICS_LINKS ? HUB_METRICS_LINKS() : ((window.HUB_RECRUIT_DATA && window.HUB_RECRUIT_DATA.entrevistas_desligamento) || []);
     const gateSource = Object.assign({}, HUB_DATA, { entrevistas_desligamento: linksGerados });
     if (noDataGate(el, ['entrevista_pesquisa', 'entrevista_solicitacao', 'entrevistas_desligamento'], canUpload(),
-      'Importe o histórico em Administração ou gere links de entrevista na aba "Lista de Colaboradores".', gateSource)) return;
+      'Importe o histórico em Administração ou acompanhe os links no módulo Controle de Desligamento, em Desenvolvimento Organizacional.', gateSource)) return;
     const d = M.entrevistaMetrics(f);
     // Drivers de Atração (simples) abre a sequência; Motivos/Submotivos
     // entram logo em seguida como um par, antes dos demais índices — o

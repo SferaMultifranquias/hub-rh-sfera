@@ -1,0 +1,7 @@
+.git
+.claude
+docs
+test
+supabase
+*.sql
+*.md

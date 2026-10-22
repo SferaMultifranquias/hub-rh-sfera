@@ -1,0 +1,46 @@
+-- Run as an administrator. Every fixture/profile change is rolled back.
+begin;
+do $$
+declare u uuid; k text; s jsonb; e jsonb; result jsonb; caught boolean; token text; n uuid; count_before integer;
+begin
+ select id into u from public.profiles where perfil='admin' and status='ativo' limit 1;
+ select id::text||'@'||data_admissao::text into k from public.colaboradores where data_admissao<current_date-200 and unidade is not null limit 1;
+ if u is null or k is null then raise exception 'Fixture prerequisites unavailable'; end if;
+ perform set_config('request.jwt.claim.sub',u::text,true);
+ select count(*) into count_before from conexao_private.records;
+ s:=jsonb_build_object('id','transaction-test','date',current_date::text,'time','10:00','duration',45,'milestone',30,'facilitator','Rollback test','participants',jsonb_build_array(k));
+ result:=public.conexao_save(jsonb_build_array(jsonb_build_object('kind','sessions','id','transaction-test','revision',0,'data',s)));
+ if not exists(select 1 from conexao_private.records where id='transaction-test' and revision=1) then raise exception 'Shared write failed'; end if;
+ caught:=false; begin perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','sessions','id','transaction-test','revision',0,'data',s))); exception when serialization_failure then caught:=true; end;
+ if not caught then raise exception 'Missing conflict protection'; end if;
+ caught:=false; begin perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','sessions','id','empty-test','revision',0,'data',s||'{"id":"empty-test","participants":[]}'::jsonb))); exception when others then caught:=true; end;
+ if not caught then raise exception 'Empty class allowed'; end if;
+ e:=jsonb_build_object('session','transaction-test','milestone',30,'date',(current_date-1)::text,'time','10:00','duration',45,'facilitator','Rollback test','status','final','summary','Synthetic transaction test','roster',jsonb_build_array(jsonb_build_object('key',k,'attendance','presente')));
+ perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','executions','id','transaction-test','revision',0,'data',e)));
+ result:=public.conexao_nps_sync();
+ select value->>'token',(value->>'id')::uuid into token,n from jsonb_array_elements(result) where value->>'session'='transaction-test';
+ if token is null then raise exception 'NPS not generated'; end if;
+ if public.conexao_nps_public(token)->>'answered'<>'false' then raise exception 'Public read failed'; end if;
+ if public.conexao_nps_public(token) ? 'employee' then raise exception 'Public identity exposure'; end if;
+ perform public.conexao_nps_public(token,10,'Rollback only');
+ caught:=false; begin perform public.conexao_nps_public(token,9,'Duplicate'); exception when others then caught:=true; end;
+ if not caught then raise exception 'Duplicate response allowed'; end if;
+ caught:=false; begin perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','executions','id','transaction-test','revision',1,'data',e||'{"status":"draft"}'::jsonb))); exception when others then caught:=true; end;
+ if not caught then raise exception 'Correction without reason allowed'; end if;
+ perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','executions','id','transaction-test','revision',1,'data',e||'{"status":"draft","correctionReason":"Correction for transaction test"}'::jsonb)));
+ caught:=false; begin perform public.conexao_nps_public(token); exception when others then caught:=true; end;
+ if not caught then raise exception 'Revoked link accepted'; end if;
+ if not conexao_private.allowed_pdf(k||'/00000000-0000-0000-0000-000000000000.pdf') or conexao_private.allowed_pdf('missing/00000000-0000-0000-0000-000000000000.pdf') then raise exception 'PDF scope failure'; end if;
+ update public.profiles set perfil='rh',unidades=array['Not in test scope'],departamentos='{}',permissoes='{"conexao_rh.acompanhar":true}'::jsonb where id=u;
+ if exists(select 1 from jsonb_array_elements(public.conexao_state()) where value->>'id'='transaction-test') then raise exception 'Cross-scope data visible'; end if;
+ caught:=false; begin perform public.conexao_save(jsonb_build_array(jsonb_build_object('kind','sessions','id','transaction-test','revision',1,'data',s))); exception when insufficient_privilege then caught:=true; end;
+ if not caught then raise exception 'Read-only write allowed'; end if;
+ if conexao_private.allowed_pdf(k||'/00000000-0000-0000-0000-000000000000.pdf') then raise exception 'PDF without document permission'; end if;
+ perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000000',true);
+ caught:=false; begin perform public.conexao_state(); exception when insufficient_privilege then caught:=true; end;
+ if not caught then raise exception 'Unauthorized state access'; end if;
+ if has_function_privilege('anon','public.conexao_state()','EXECUTE') or has_table_privilege('authenticated','conexao_private.records','SELECT') or has_table_privilege('anon','conexao_private.nps','SELECT') then raise exception 'Unexpected direct grants'; end if;
+ if (select public from storage.buckets where id='conexao-fit') then raise exception 'PDF bucket public'; end if;
+end $$;
+rollback;
+select 'PASS: shared persistence, CAS conflict, empty class, NPS eligibility/token/privacy/one response/revocation, correction reason, scope, read-only denial, private PDFs and grants. Fixtures rolled back.' as checks;

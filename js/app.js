@@ -12,6 +12,8 @@
   window.HUB_FILTERS = {};
 
   const NAV_TITLES = {
+    'conexao-rh': 'Conexão RH',
+    'do-controle-desligamento': 'Controle de Desligamento',
     dashboard: 'Dashboard',
     'ind-headcount': 'Headcount', 'ind-recrutamento': 'Recrutamento', 'ind-rotatividade': 'Rotatividade', 'ind-experiencia': 'Avaliação da Experiência', 'ind-pesquisa-clima': 'Pesquisa de Clima', 'ind-engajamento': 'Pesquisa de Engajamento', 'ind-boletim': 'Boletim da Liderança', 'ind-satisfacao': 'Pesquisa de Satisfação', 'ind-fechamento': 'Fechamento do Período', 'ind-organograma': 'Organograma',
     'ind-desligamento': 'Entrevista de Desligamento', 'ind-feedbacks': 'Feedbacks', 'ind-oneonone': '1:1',
@@ -28,6 +30,8 @@
   // correspondente do catálogo (js/permissions.js) para aparecer na barra
   // lateral e para o conteúdo ser renderizado.
   const NAV_PERMISSIONS = {
+    'conexao-rh': 'conexao_rh.acompanhar',
+    'do-controle-desligamento': 'indicadores.controle_desligamento',
     'ind-headcount': 'indicadores.headcount', 'ind-recrutamento': 'indicadores.recrutamento',
     'ind-rotatividade': 'indicadores.rotatividade', 'ind-experiencia': 'indicadores.experiencia', 'ind-pesquisa-clima': 'indicadores.pesquisa_clima', 'ind-engajamento': 'indicadores.engajamento', 'ind-boletim': 'indicadores.boletim', 'ind-satisfacao': 'indicadores.satisfacao', 'ind-fechamento': 'indicadores.fechamento', 'ind-organograma': 'indicadores.organograma', 'ind-desligamento': 'indicadores.desligamento',
     'ind-feedbacks': 'indicadores.feedbacks', 'ind-oneonone': 'indicadores.oneonone',
@@ -45,12 +49,14 @@
   // vagas/candidatos/entrevistas/onboarding toda vez que são abertas — é
   // isso que faz os dados aparecerem "em tempo real, de forma automática"
   // sem upload.
-  const RECRUIT_SECTIONS = new Set(['ind-recrutamento', 'ind-desligamento', 'ind-fechamento', 'rec-dashboard', 'rec-vagas', 'rec-candidatos', 'rec-agenda', 'rec-banco-talentos', 'rec-aprovacoes', 'rec-historico', 'rec-transferencia', 'rec-parecer-gestor', 'tre-onboarding', 'tre-visita-loja']);
+  const RECRUIT_SECTIONS = new Set(['do-controle-desligamento', 'ind-recrutamento', 'ind-desligamento', 'ind-fechamento', 'rec-dashboard', 'rec-vagas', 'rec-candidatos', 'rec-agenda', 'rec-banco-talentos', 'rec-aprovacoes', 'rec-historico', 'rec-transferencia', 'rec-parecer-gestor', 'tre-onboarding', 'tre-visita-loja']);
 
   function sectionRenderer(name) {
     const f = getFilters();
     const el = $('#sec-' + name);
     switch (name) {
+      case 'conexao-rh': return HUB_CONEXAO.render(el, f);
+      case 'do-controle-desligamento': return HUB_CONTROLE_DESLIGAMENTO.render(el, f);
       case 'dashboard': return HUB_SECTIONS.renderDashboard(el, f);
       case 'ind-headcount': return HUB_SECTIONS.renderHeadcount(el, f);
       case 'ind-recrutamento': return HUB_SECTIONS.renderRecrutamentoDashboard(el, f);
@@ -469,6 +475,7 @@
     // A Pesquisa de Engajamento é carregada sob demanda e muda a cada export novo:
     // "Atualizar dados" (e os uploads) descartam o cache para a próxima leitura.
     if (window.HUB_ENGAJAMENTO) HUB_ENGAJAMENTO.invalidar();
+    if(window.HUB_CONEXAO_STORE?.ready())await HUB_CONEXAO_STORE.load(true);
     if (window.HUB_BOLETIM) HUB_BOLETIM.invalidar();
     if (window.HUB_SATISFACAO) HUB_SATISFACAO.invalidar();
     if (window.HUB_FECHAMENTO) HUB_FECHAMENTO.invalidar();
